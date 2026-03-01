@@ -60,6 +60,55 @@ All other existing `catch` blocks (`catch (Exception e)`, `catch (RuntimeExcepti
 #### MongoDB Atlas SRV Connection Support
 - `mongodb+srv://` connection strings with automatic DNS SRV lookup
 - `MorphiumConfig.fromConnection()` parses SRV URIs and resolves cluster hosts
+- New `DnsSrvResolver` utility class (`de.caluga.morphium.driver.DnsSrvResolver`) — pure-Java DNS implementation via raw UDP/TCP queries, no JNDI dependency
+- Automatic TCP fallback when UDP response is truncated
+- Windows-compatible: skips `/etc/resolv.conf` on Windows, falls back to public DNS servers (8.8.8.8, 1.1.1.1)
+- TLS is enabled automatically for `mongodb+srv://` connections (Atlas requires it)
+
+#### @AutoSequence Annotation — Automatic Sequence Number Assignment
+- New `@AutoSequence` annotation for zero-boilerplate sequence number assignment on `store()`/`storeList()`
+- When a document is stored and the annotated field is unset (`null` for boxed types, `0` for primitives), Morphium automatically assigns the next value from the named sequence
+- Batch optimisation: `storeList()` allocates all required sequence numbers in a single lock+increment+unlock round-trip via `SequenceGenerator.getNextBatch(int)` instead of one round-trip per document
+- Supported field types: `long`, `Long`, `int`, `Integer`, `String`
+- Configurable: `name` (sequence name, default derives from field name), `startValue` (default 1), `inc` (step size, default 1)
+
+#### SequenceGenerator.getNextBatch(int) — Bulk Sequence Allocation
+- New method `getNextBatch(int count)` reserves a contiguous block of N sequence numbers in a single atomic operation
+- Reduces MongoDB round-trips from 5×N (per-value lock cycle) down to a constant 5 regardless of batch size
+- Returns a `long[]` array of exactly `count` consecutive values: `[first, first+inc, first+2*inc, ...]`
+- Throws `IllegalArgumentException` if count ≤ 0; single count delegates to `getNextValue()` for consistency
+
+#### Thread Context ClassLoader Support (Quarkus Compatibility)
+- `Class.forName()` calls replaced with `AnnotationAndReflectionHelper.classForName()` throughout
+- Uses `Thread.currentThread().getContextClassLoader()` as primary classloader, falling back to `Class.forName()`
+- Affects entity scanning, capped collection checks, and index checks at startup
+- Required for Quarkus and other frameworks with non-standard classloader hierarchies
+
+### Fixed
+
+#### Concurrent Double-Write in BufferedMorphiumWriterImpl
+- `flush()` and `flush(Class)` now use `opLog.remove(clz)` (atomic ownership transfer) instead of `opLog.get(clz)`
+- Prevents duplicate-key errors when two threads call `flush()` concurrently (e.g. explicit `storeList` flush + background `BufferedWriter_thread`)
+- Failed entries are re-queued for the next cycle to prevent silent data loss
+
+#### Standalone MongoDB Compatibility
+- **WriteSafety downgrade**: Entities with `@WriteSafety(level=MAJORITY)` or `w > 1` are automatically downgraded to `w:1` when connected to a standalone MongoDB (prevents write concern timeout)
+- **Write-buffer hardening**: `BufferedMorphiumWriterImpl` now executes immediately when no `@WriteBuffer` annotation is present instead of buffering
+- **Replica set detection**: Uses `driver.isReplicaSet()` (actual driver state) instead of the config flag which defaults to `true` regardless of actual topology
+- **Transaction warning**: `startTransaction()` logs a warning when connected to standalone MongoDB (transactions require a replica set)
+
+#### Index and Collection Checks
+- `setAutoIndexAndCappedCreationOnWrite()` now correctly sets both `IndexCheck` and `CappedCheck` flags (previously only set `IndexCheck`)
+- Collections that don't exist yet no longer trigger spurious "missing indices" warnings at startup — indices are created on first write instead
+- ID generation in `BufferedMorphiumWriterImpl` extended to support `UUID` and `ObjectId` types
+
+#### InMemoryDriver X509 Support
+- Added no-op `runCommand(X509AuthCommand)` handler in `InMemoryDriver` to prevent NPE when testing with X.509 authentication enabled
+
+### Changed
+
+#### Deprecated API Replacement in Tests
+- `setDriverName()` / `setRetriesOnNetworkError()` replaced with their new API equivalents in all test files
 
 ### Dependencies
 - **logback-core**: 1.5.24 → 1.5.25

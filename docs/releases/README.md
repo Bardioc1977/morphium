@@ -38,8 +38,13 @@ Current development version with significant new features.
 **Highlights:**
 - **Breaking:** `MorphiumDriverException` is now unchecked (`RuntimeException`)
 - `@Version` annotation for optimistic locking
+- `@AutoSequence` annotation for automatic sequence number assignment
+- `SequenceGenerator.getNextBatch(int)` for O(1) bulk sequence allocation
 - MONGODB-X509 client certificate authentication
-- MongoDB Atlas `mongodb+srv://` connection support
+- MongoDB Atlas `mongodb+srv://` with pure-Java DNS SRV resolution (`DnsSrvResolver`)
+- Thread context classloader support (Quarkus compatibility)
+- Standalone MongoDB hardening (WriteSafety downgrade, transaction warnings)
+- Concurrent flush fix in `BufferedMorphiumWriterImpl`
 
 ---
 
