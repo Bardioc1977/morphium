@@ -932,6 +932,32 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
             // DBCollection collection = null;
 
             try {
+                // CosmosDB: ignore @Capped, create regular collection instead
+                if (morphiumDriver.isCosmosDB()) {
+                    boolean exists = morphiumDriver.exists(getConfig().connectionSettings().getDatabase(), coll);
+                    if (!exists) {
+                        log.warn("CosmosDB: @Capped not supported — creating regular collection '{}'", coll);
+                        MongoConnection primaryConnection = null;
+                        CreateCommand create = null;
+                        try {
+                            primaryConnection = morphiumDriver.getPrimaryConnection(getWriteConcernForClass(c));
+                            create = new CreateCommand(primaryConnection);
+                            create.setColl(coll).setDb(getDatabase());
+                            create.execute();
+                            create.releaseConnection();
+                            create = null;
+                            primaryConnection = null;
+                        } finally {
+                            if (create != null) {
+                                create.releaseConnection();
+                            } else if (primaryConnection != null) {
+                                morphiumDriver.releaseConnection(primaryConnection);
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 boolean exists = morphiumDriver.exists(getConfig().connectionSettings().getDatabase(), coll);
 
                 if (exists && morphiumDriver.isCapped(getConfig().connectionSettings().getDatabase(), coll)) {
@@ -2762,6 +2788,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     /////
 
     public <T> Map<String, Object> explainMapReduce(Class <? extends T > type, String map, String reduce, ExplainVerbosity verbose) throws MorphiumDriverException {
+        if (getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "MapReduce is not supported on CosmosDB. "
+                + "Use the Aggregation framework: morphium.createAggregator()");
+        }
         MongoConnection readConnection = morphiumDriver.getReadConnection(getReadPreferenceForClass(type));
 
         try {
@@ -2773,6 +2804,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public <T> List<T> mapReduce(Class <? extends T > type, String map, String reduce) throws MorphiumDriverException {
+        if (getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "MapReduce is not supported on CosmosDB. "
+                + "Use the Aggregation framework: morphium.createAggregator()");
+        }
         MongoConnection readConnection = morphiumDriver.getReadConnection(getReadPreferenceForClass(type));
 
         try {
@@ -2894,6 +2930,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public void startTransaction() {
+        if (getDriver() != null && getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "Transactions are not supported on Azure CosmosDB. "
+                + "Use atomic operations (inc/dec/set) for single-document consistency.");
+        }
         getDriver().startTransaction(false);
     }
 
@@ -2946,6 +2987,10 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public <T> void watch(String collectionName, int maxWaitTime, boolean updateFull, List<Map<String, Object >> pipeline, ChangeStreamListener lst) {
+        if (getDriver().isCosmosDB()) {
+            log.warn("CosmosDB: Change streams have limited support. "
+                   + "Delete events may not be received.");
+        }
         WatchCommand settings = null;
         try {
             MongoConnection primaryConnection = getDriver().getPrimaryConnection(null);
@@ -3078,6 +3123,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public Map < Class<?>, Map<String, Integer >> checkCapped() {
+        if (morphiumDriver.isCosmosDB()) {
+            log.debug("CosmosDB: skipping capped collection check (not supported)");
+            return Collections.emptyMap();
+        }
+
         Map < Class<?>, Map<String, Integer >> uncappedCollections = new HashMap<>();
 
         try (ScanResult scanResult = new ClassGraph().enableAnnotationInfo().enableClassInfo().scan()) {
