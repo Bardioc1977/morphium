@@ -82,12 +82,28 @@ public <T> void ensureIndex(Class<T> type, Map<String, Object> index)
 public <T> void ensureIndex(Class<T> type, String... fields)
 ```
 
+#### Backend Detection
+
+```java
+// Get the detected backend type (automatic, no configuration needed)
+public BackendType getBackendType()
+// → MONGODB, COSMOSDB, MORPHIUM_SERVER, or IN_MEMORY
+
+// Access driver-level detection
+public MorphiumDriver getDriver()
+// driver.isCosmosDB()        → true if Azure CosmosDB
+// driver.isMorphiumServer()  → true if MorphiumServer
+// driver.isInMemoryBackend() → true if InMemoryDriver
+```
+
+See [Azure CosmosDB Compatibility](./cosmosdb-compatibility.md) for details on automatic detection and compatibility guards.
+
 #### Transaction Support
 
 ```java
-// Transaction management
+// Transaction management (throws UnsupportedOperationException on CosmosDB)
 public void beginTransaction()
-public void commitTransaction() 
+public void commitTransaction()
 public void abortTransaction()
 
 // Check transaction state
