@@ -32,6 +32,28 @@ cfg.messagingSettings().setMessagingMultithreadded(true);
 cfg.messagingSettings().setUseChangeStream(true);
 ```
 
+## Azure CosmosDB Considerations
+
+Morphium automatically detects CosmosDB during the `hello` handshake — no manual configuration is needed. When targeting CosmosDB, keep these points in mind:
+
+- **SSL/TLS is mandatory**: `cfg.connectionSettings().setUseSSL(true)`
+- **MongoDB API 5.0+ required**: Morphium uses the `hello` command (not `isMaster`)
+- **Transactions are not available**: Use atomic single-document operations (`inc()`, `dec()`, `set()`) instead
+- **MapReduce is not available**: Use the Aggregation framework (`morphium.createAggregator()`)
+- **`@Capped` is ignored**: Collections are created as regular collections
+- **Messaging**: Use polling mode (`messaging.setPolling(true)`) — change stream delete events may not arrive
+
+Check the detected backend at runtime:
+
+```java
+BackendType type = morphium.getBackendType();
+if (type == BackendType.COSMOSDB) {
+    // adjust behavior if needed
+}
+```
+
+See [Azure CosmosDB Compatibility](./cosmosdb-compatibility.md) for the complete feature matrix and compatibility guards.
+
 ## Object Mapping
 - Use annotations on POJOs: `@Entity`, `@Embedded`, `@Id`, `@Reference(lazyLoading=true)`, `@Cache`, `@Index`
 - Field‑level encryption: `@Encrypted` (requires an encryption provider/key)
