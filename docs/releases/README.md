@@ -42,6 +42,7 @@ Current development version with significant new features.
 - `SequenceGenerator.getNextBatch(int)` for O(1) bulk sequence allocation
 - MONGODB-X509 client certificate authentication
 - MongoDB Atlas `mongodb+srv://` with pure-Java DNS SRV resolution (`DnsSrvResolver`)
+- Automatic Azure CosmosDB detection with compatibility guards (`BackendType` enum)
 - Thread context classloader support (Quarkus compatibility)
 - Standalone MongoDB hardening (WriteSafety downgrade, transaction warnings)
 - Concurrent flush fix in `BufferedMorphiumWriterImpl`
