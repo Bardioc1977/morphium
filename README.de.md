@@ -1,4 +1,4 @@
-# Morphium 6.1.1
+# Morphium 6.2.0
 
 **Feature-reiches MongoDB ODM und Messaging-Framework für Java 21+**
 
@@ -87,7 +87,7 @@ Maven-Abhaengigkeiten:
 <dependency>
   <groupId>de.caluga</groupId>
   <artifactId>morphium</artifactId>
-  <version>[6.1.1,)</version>
+  <version>[6.2.0,)</version>
 </dependency>
 <dependency>
   <groupId>org.mongodb</groupId>
@@ -106,7 +106,7 @@ Migration von v5? → `docs/howtos/migration-v5-to-v6.md`
 <dependency>
   <groupId>de.caluga</groupId>
   <artifactId>morphium</artifactId>
-  <version>6.1.1</version>
+  <version>6.2.0</version>
 </dependency>
 ```
 
@@ -289,13 +289,13 @@ MorphiumServer ist ein eigenständiger Prozess, der das MongoDB Wire Protocol im
 
 ```bash
 # Server starten
-java -jar target/morphium-6.1.1-server-cli.jar
+java -jar target/morphium-6.2.0-server-cli.jar
 
 # Clients verbinden (z.B. MongoDB Compass, mongosh)
 mongosh mongodb://localhost:27017
 
 # Start mit Persistenz (Snapshots)
-java -jar target/morphium-6.1.1-server-cli.jar --dump-dir ./data --dump-interval 300
+java -jar target/morphium-6.2.0-server-cli.jar --dump-dir ./data --dump-interval 300
 ```
 
 **Replica Set Unterstützung (experimentell)**
@@ -303,7 +303,7 @@ java -jar target/morphium-6.1.1-server-cli.jar --dump-dir ./data --dump-interval
 MorphiumServer unterstützt eine grundlegende Replica-Set-Emulation. Starten Sie mehrere Instanzen mit demselben Replica-Set-Namen und derselben Seed-Liste:
 
 ```bash
-java -jar target/morphium-6.1.1-server-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
+java -jar target/morphium-6.2.0-server-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
 ```
 
 **Use Cases:**
@@ -371,6 +371,6 @@ Vielen Dank an alle Contributors die diese Release möglich gemacht haben, und a
 
 **Upgrade geplant?** Siehe [Migration Guide](docs/howtos/migration-v5-to-v6.md) für Schritt-für-Schritt-Anleitung.
 
-Viel Erfolg mit Morphium 6.1.1! 🚀
+Viel Erfolg mit Morphium 6.2.0! 🚀
 
 *Stephan Bösebeck & das Morphium-Team*
