@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.2.0]
 
+### Added
+
+#### `@AutoSequence` annotation for automatic sequence assignment
+Annotate a field with `@AutoSequence(name = "my_seq")` and Morphium assigns the next sequence value automatically on `store()` and `storeList()`. Batch stores use `SequenceGenerator.getNextBatch(n)` for O(1) allocation regardless of list size. Supported types: `long`/`Long`, `int`/`Integer`, `String`.
+
+#### `SequenceGenerator.getNextBatch(int)` for bulk allocation
+Reserves a contiguous block of N sequence numbers in a single lock+read+inc+unlock round-trip instead of N individual calls (5 round-trips each).
+
+#### Automatic CosmosDB backend detection
+Morphium detects Azure CosmosDB during the `hello` handshake (hostname patterns, `setName=globaldb` + SSL). No manual configuration needed. Unsupported operations are guarded automatically:
+- `beginTransaction()` → throws `UnsupportedOperationException`
+- `mapReduce()` → throws `UnsupportedOperationException`
+- `@Capped` → silently creates regular collection
+- Change streams → warning logged
+
+#### `BackendType` enum and `getBackendType()` API
+New enum `BackendType` (MONGODB, COSMOSDB, MORPHIUM_SERVER, IN_MEMORY) and convenience method `morphium.getBackendType()`. Default methods `isCosmosDB()` and `getBackendType()` on `MorphiumDriver` interface — no breaking changes for existing driver implementations.
+
+### Fixed
+
+#### Standalone MongoDB hardening
+- `getWriteConcernForClass()` detects standalone MongoDB via driver state and downgrades `@WriteSafety` levels that require a replica set (WAIT_FOR_SLAVE, MAJORITY) to w:1 with a warning
+- `startTransaction()` logs a warning on standalone MongoDB
+
+#### BufferedMorphiumWriterImpl fixes
+- `setIdIfNull()` no longer throws for UUID, ObjectId, Long, or Integer `@Id` fields
+- `addToWriteQueue()` executes immediately for entities without `@WriteBuffer` (size == 0)
+- Concurrent double-write in `flush()` prevented
+
+#### Sequence `@WriteSafety` level
+Changed from `WAIT_FOR_SLAVE` to `BASIC` (w:1) — atomicity comes from `findAndModify`, not the write concern
+
+#### Index and capped collection checks
+- `setAutoIndexAndCappedCreationOnWrite()` now also sets CappedCheck
+- `checkIndices()` no longer reports missing indices for collections that don't exist yet
+
+#### InMemoryDriver
+- Added no-op `runCommand(X509AuthCommand)` handler to prevent errors during X509 auth testing
+
+#### DNS SRV resolution
+- Pure-Java `DnsSrvResolver` for `mongodb+srv://` connection strings (no JNDI dependency)
+
+#### Thread context classloader (Quarkus compatibility)
+- `Class.forName()` calls in `checkCapped`, `checkIndices`, and `initializeAndConnect` now use the thread context classloader
+
 ### Breaking Changes
 #### MorphiumDriverException is now unchecked (extends RuntimeException)
 `MorphiumDriverException` now extends `RuntimeException` instead of `Exception`, aligning with the MongoDB Java driver (`MongoException`), JPA, jOOQ, and Spring Data conventions.
