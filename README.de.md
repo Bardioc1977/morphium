@@ -92,7 +92,7 @@ Maven-Abhaengigkeiten:
 <dependency>
   <groupId>org.mongodb</groupId>
   <artifactId>bson</artifactId>
-  <version>4.7.1</version>
+  <version>4.11.5</version>
 </dependency>
 ```
 
