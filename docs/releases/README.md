@@ -29,6 +29,18 @@ When creating a new release:
 
 ## Available Releases
 
+### 6.2.0 (in development)
+Feature release with CosmosDB auto-detection and `@AutoSequence` annotation.
+
+**Highlights:**
+- `@AutoSequence` for zero-boilerplate sequence number assignment
+- `SequenceGenerator.getNextBatch(int)` for O(1) bulk allocation
+- Automatic Azure CosmosDB detection with compatibility guards
+- `BackendType` enum and `getBackendType()` API
+- Standalone MongoDB hardening (WriteConcern downgrade, transaction warnings)
+- Pure-Java DNS SRV resolver for `mongodb+srv://`
+- Thread context classloader support (Quarkus compatibility)
+
 ### [6.0.1](CHANGELOG-6.0.1.md) - TBD
 Bugfix release with enhanced null handling and connection stability
 - [Detailed Changelog](CHANGELOG-6.0.1.md)
