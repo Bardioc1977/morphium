@@ -1,3 +1,8 @@
+> **ATTENTION -- This is a fork of [sboesebeck/morphium](https://github.com/sboesebeck/morphium).**
+> Derived projects like [quarkus-morphium](https://github.com/Bardioc1977/quarkus-morphium) and
+> [quarkus-morphium-showcase](https://github.com/Bardioc1977/quarkus-morphium-showcase) only work
+> with this version.
+
 # Morphium 6.2.0-SNAPSHOT
 
 **Feature-rich MongoDB ODM and messaging framework for Java 21+**
