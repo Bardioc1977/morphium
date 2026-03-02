@@ -49,44 +49,33 @@ _* Richtwerte aus internen Messungen; tatsächliche Werte hängen von Hardware u
 - Production-Deployment: `docs/production-deployment-guide.md`
 - Monitoring & Troubleshooting: `docs/monitoring-metrics-guide.md`
 
-## 🚀 Neu in Version 6.1
+## 🚀 Neu in Version 6.2
 
-### MorphiumServer – Der "Drop-in"-Ersatz
-Morphium 6.1 macht den **MorphiumServer** zu einem echten "Drop-in"-Ersatz für MongoDB in Entwicklungs- und Testumgebungen:
-- ✅ **Volle Wire-Protocol-Unterstützung**: Verwendung jedes Standard-MongoDB-Clients (mongosh, Compass, etc.)
-- ✅ **CLI-Tooling**: Eigener `morphium-server-cli` für einfache Bereitstellung
-- ✅ **Replica-Set-Emulation**: Testen von Multi-Node-Cluster-Verhalten ohne echtes MongoDB
-- ✅ **Persistenz**: Snapshot-Unterstützung zur Bewahrung von In-Memory-Daten über Neustarts hinweg
+- **`@AutoSequence`** — Automatische Sequenznummernvergabe bei `store()` / `storeList()` mit O(1) Batch-Allokation
+- **Azure CosmosDB** — Automatische Erkennung via `hello`-Handshake mit eingebauten Kompatibilitäts-Guards ([Details](docs/cosmosdb-compatibility.md))
+- **`BackendType` Enum** — `morphium.getBackendType()` liefert MONGODB, COSMOSDB, MORPHIUM_SERVER oder IN_MEMORY
+- **`MorphiumDriverException` unchecked** — Erweitert `RuntimeException`, eliminiert 40+ catch-wrap-Blöcke
+- **Standalone MongoDB** — Automatisches WriteConcern-Downgrade und Transaktions-Warnungen
+- **DNS SRV** — Pure-Java `DnsSrvResolver` für `mongodb+srv://` (kein JNDI)
+- **Quarkus** — Thread-Context-Classloader-Unterstützung in allen `Class.forName()`-Aufrufen
 
-## 🚀 Neu in Version 6.0
+Siehe [CHANGELOG](CHANGELOG.md) für alle Details.
 
-### JDK 21 & Moderne Java-Features
-- **Virtual Threads**: Messaging-System optimiert für Project Loom
-- **Pattern Matching**: Verbesserte Code-Klarheit und Typ-Sicherheit
-- **Records**: Noch nicht als `@Entity` oder `@Embedded` unterstützt (siehe [#116](https://github.com/sboesebeck/morphium/issues/116))
-- **Sealed Classes**: Bessere Typ-Hierarchien in Domain-Models
+<details>
+<summary>Vorherige Versionen (6.0 – 6.1)</summary>
 
-### Treiber & Konnektivität
-- **SSL/TLS-Unterstützung**: Sichere Verbindungen zu MongoDB-Instanzen (seit v6.0)
-- **Virtual Threads** im Treiber für optimale Performance
+### v6.1
+- **MorphiumServer** als Drop-in-Ersatz für MongoDB (Wire Protocol, CLI, Replica-Set-Emulation, Persistenz)
+- **MONGODB-X509** Client-Zertifikat-Authentifizierung
+- **`@Version`** Optimistic Locking
 
-### Verbessertes Messaging-System
-- **Weniger Duplikate**: Optimierte Message-Processing-Logik
-- **Virtual Thread Integration**: Bessere Concurrency-Performance
-- **Höherer Durchsatz**: Interne Benchmarks zeigen deutliche Steigerungen
-- **Distributed Locking**: Verbesserte Multi-Instance-Koordination
-
-### In-Memory-Treiber für Testing
-- **Keine MongoDB benötigt**: Komplette Test-Suite ohne externe Abhängigkeiten
-- **Deutlich schnellere Tests**: Profitieren von reinem In-Memory-Zugriff
-- **CI/CD-freundlich**: Perfekt für Continuous Integration Pipelines
-- **Breite Feature-Unterstützung**: Viele MongoDB-Operationen, mit dokumentierten Ausnahmen
-
-### Umfassende Dokumentation
-- Komplette Neuschreibung aller Guides
-- Praxis-Beispiele und Use Cases
-- Migration-Guide von 5.x
-- Architektur-Details und Best Practices
+### v6.0
+- **Java 21** mit Virtual Threads
+- **SSL/TLS** für sichere Verbindungen
+- **In-Memory-Treiber** mit ~93% MongoDB Feature-Abdeckung
+- **Messaging** Verbesserungen (weniger Duplikate, Distributed Locking, höherer Durchsatz)
+- Komplette Dokumentations-Überarbeitung
+</details>
 
 ## Anforderungen & Abhaengigkeiten
 - Java 21 oder neuer
