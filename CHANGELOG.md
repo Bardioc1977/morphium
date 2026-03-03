@@ -54,6 +54,15 @@ Changed from `WAIT_FOR_SLAVE` to `BASIC` (w:1) — atomicity comes from `findAnd
 #### Thread context classloader (Quarkus compatibility)
 - `Class.forName()` calls in `checkCapped`, `checkIndices`, and `initializeAndConnect` now use the thread context classloader
 
+### Added
+
+#### @Reference cascade features and cycle detection
+- **`@Reference(cascadeDelete = true)`** — Referenced entities are automatically deleted when the parent entity is deleted. Supports single references, collections, and maps. Cycle-safe via identity-based tracking.
+- **`@Reference(orphanRemoval = true)`** — Referenced entities that are no longer referenced after an update are automatically deleted. Works by comparing old and new reference IDs before/after store.
+- **Cycle detection in `ObjectMapperImpl.serialize()`** — Circular `@Reference` chains (A→B→A) are detected during serialization. Objects with IDs return a minimal `{_id: ...}` document; objects without IDs throw `IllegalStateException` with a clear error message.
+- New `CascadeHelper` utility class encapsulating all cascade logic with `ThreadLocal`-based cycle detection.
+- Comprehensive documentation: `docs/howtos/references-and-relationships.md`
+
 ### Breaking Changes
 
 #### MorphiumDriverException is now unchecked (`extends RuntimeException`)
