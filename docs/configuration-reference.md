@@ -98,6 +98,25 @@ cfg.driverSettings()
 - **`SingleMongoConnectDriver`**: Single connection driver
 - **`InMemDriver`**: In-memory driver for testing
 
+## Automatic Backend Detection
+
+Morphium automatically detects the connected backend type during the `hello` handshake. **No configuration is needed** — CosmosDB, MorphiumServer, and InMemory backends are recognized automatically.
+
+When CosmosDB is detected, compatibility guards activate:
+- `beginTransaction()` → throws `UnsupportedOperationException`
+- `mapReduce()` → throws `UnsupportedOperationException`
+- `@Capped` → silently creates a regular collection
+- Change streams → warning logged (limited delete event support)
+
+Query the detected backend at runtime:
+
+```java
+BackendType type = morphium.getBackendType();
+// → MONGODB, COSMOSDB, MORPHIUM_SERVER, or IN_MEMORY
+```
+
+See [Azure CosmosDB Compatibility](./cosmosdb-compatibility.md) for the full feature matrix.
+
 ## Authentication Settings
 
 Configure MongoDB authentication.

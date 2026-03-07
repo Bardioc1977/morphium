@@ -5,141 +5,173 @@ All notable changes to Morphium will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.2.0]
+## [Unreleased] - 6.2.0-SNAPSHOT
 
-### Breaking Changes
-
-#### MorphiumDriverException is now unchecked (extends RuntimeException)
-`MorphiumDriverException` now extends `RuntimeException` instead of `Exception`, aligning with the MongoDB Java driver (`MongoException`), JPA, jOOQ, and Spring Data conventions.
-
-**What changed:**
-- 40+ redundant `catch (MorphiumDriverException e) { throw new RuntimeException(e); }` blocks removed across 13 source files
-- `MorphiumDriverException` now propagates naturally through the call stack with its original type preserved
-- Subclasses `MorphiumDriverNetworkException` and `FunctionNotSupportedException` inherit the change
-
-**Migration:**
-- Existing `catch (MorphiumDriverException e)` blocks continue to work — no changes needed
-- Multi-catch like `catch (RuntimeException | MorphiumDriverException e)` must be simplified to `catch (RuntimeException e)` (compiler will flag this)
-- **Important:** Code that inspects `getCause()` for wrapped exceptions must be updated:
-  ```java
-  // BEFORE (no longer works — getCause() won't return MorphiumDriverException)
-  catch (RuntimeException e) {
-      if (e.getCause() instanceof MorphiumDriverException mde) { ... }
-  }
-
-  // AFTER (catch directly)
-  catch (MorphiumDriverException e) {
-      handleDbError(e);
-  }
-  ```
+> See [docs/releases/RELEASE-NOTES-6.2.0-SNAPSHOT.md](docs/releases/RELEASE-NOTES-6.2.0-SNAPSHOT.md) for a quick summary.
 
 ### Added
 
-#### `@Version` annotation — Optimistic Locking
-Full optimistic locking support via a new `@Version` annotation on `Long` fields. On insert, the version is initialized to `1`; on update, Morphium automatically adds a version-match filter and increments the version atomically. A `VersionMismatchException` is thrown if the document was modified concurrently.
+#### `@AutoSequence` annotation for automatic sequence assignment
+Annotate a field with `@AutoSequence(name = "my_seq")` and Morphium assigns the next sequence value automatically on `store()` and `storeList()`. Batch stores use `SequenceGenerator.getNextBatch(n)` for O(1) allocation regardless of list size. Supported types: `long`/`Long`, `int`/`Integer`, `String`.
 
-```java
-@Entity
-public class Order {
-    @Id private MorphiumId id;
-    @Version private Long version;
-    private String status;
-}
-```
-- Works with `store()`, `set()`, and bulk operations
-- Supported by PooledDriver, InMemoryDriver, and MorphiumServer
-- `VersionMismatchException` propagates cleanly without being wrapped in retry logic
+#### `SequenceGenerator.getNextBatch(int)` for bulk allocation
+Reserves a contiguous block of N sequence numbers in a single lock+read+inc+unlock round-trip instead of N individual calls (5 round-trips each).
 
-#### MONGODB-X509 client-certificate authentication
-Added support for X.509 client-certificate authentication against MongoDB:
-- New `authMechanism` setting in `MorphiumConfig` (set to `"MONGODB-X509"`)
-- Certificate subject is sent as the username in the `authenticate` command
-- Integrates with the existing SSL/TLS configuration
+#### Automatic CosmosDB backend detection
+Morphium detects Azure CosmosDB during the `hello` handshake (hostname patterns, `setName=globaldb` + SSL). No manual configuration needed. Unsupported operations are guarded automatically:
+- `beginTransaction()` → throws `UnsupportedOperationException`
+- `mapReduce()` → throws `UnsupportedOperationException`
+- `@Capped` → silently creates regular collection
+- Change streams → warning logged
 
-#### MongoDB Atlas `mongodb+srv://` URL support
-Morphium can now connect to MongoDB Atlas using standard `mongodb+srv://` connection strings:
-- DNS SRV records are resolved automatically during `initializeAndConnect()`
-- Pure-Java DNS resolver (no JNDI dependency) — compatible with Quarkus, GraalVM native image
-- TCP fallback for truncated DNS responses, DNS compression pointer support
-- TLS is automatically enabled for SRV connections
-
-**Note:** `authSource` and `replicaSet` from the SRV TXT record are not yet resolved automatically and must be configured separately.
-
-#### `@AutoSequence` annotation — zero-boilerplate sequence assignment
-New field-level annotation that automatically assigns sequence numbers from a MongoDB-backed `SequenceGenerator` when storing entities:
-
-```java
-@Entity
-public class ImportRecord {
-    @Id private MorphiumId id;
-
-    @AutoSequence(name = "import_number", startValue = 1000, inc = 1)
-    private Long importNumber;
-}
-```
-
-- Supported field types: `long`, `Long`, `int`, `Integer`, `String`
-- Explicit values are never overwritten — only `null` (or `0` for primitives) triggers assignment
-- Multiple `@AutoSequence` fields per entity, each with independent counters
-- **Batch optimization:** `storeList()` allocates all sequence numbers in a single round-trip via `getNextBatch()` instead of one call per document
-
-#### `SequenceGenerator.getNextBatch(int)`
-New method for bulk sequence allocation that reduces MongoDB round-trips from O(5N) to O(5) regardless of batch size:
-
-```java
-SequenceGenerator gen = new SequenceGenerator(morphium, "orderNo", 1, 1);
-long[] ids = gen.getNextBatch(1000); // single lock + single $inc
-```
-
-Fully interoperable with existing `getNextValue()` — both share the same lock and sequence document.
-
-#### Configurable `LocalDateTimeMapper` storage format
-The `LocalDateTimeMapper` now supports switching between MongoDB `Date` (epoch millis) and ISO-8601 string storage via a new configuration option, enabling better interoperability with external tools and human-readable date storage.
+#### `BackendType` enum and `getBackendType()` API
+New enum `BackendType` (MONGODB, COSMOSDB, MORPHIUM_SERVER, IN_MEMORY) and convenience method `morphium.getBackendType()`. Default methods `isCosmosDB()` and `getBackendType()` on `MorphiumDriver` interface — no breaking changes for existing driver implementations.
 
 ### Fixed
 
-#### Concurrent double-write in `BufferedMorphiumWriterImpl.flush()`
-`flush()` used `opLog.get()` which returned a live reference to the operation list. Concurrent flush calls (e.g., Quarkus virtual thread + housekeeping thread) would both snapshot and write the same entries, causing `E11000 duplicate key` errors. Fixed by using `opLog.remove()` for atomic ownership transfer — the same pattern already used by `runIt()`.
+#### Standalone MongoDB hardening
+- `getWriteConcernForClass()` detects standalone MongoDB via driver state and downgrades `@WriteSafety` levels that require a replica set (WAIT_FOR_SLAVE, MAJORITY) to w:1 with a warning
+- `startTransaction()` logs a warning on standalone MongoDB
 
-#### Quarkus / OSGi ClassLoader compatibility
-All 14 `Class.forName()` call sites across 9 source files now use a centralized `AnnotationAndReflectionHelper.classForName()` helper that prefers the thread context ClassLoader. This fixes `ClassNotFoundException` in Quarkus dev mode, OSGi containers, and JBoss, where application classes are loaded by a child ClassLoader invisible to the library's own ClassLoader.
+#### BufferedMorphiumWriterImpl fixes
+- `setIdIfNull()` no longer throws for UUID, ObjectId, Long, or Integer `@Id` fields
+- `addToWriteQueue()` executes immediately for entities without `@WriteBuffer` (size == 0)
+- Concurrent double-write in `flush()` prevented
 
-#### `@Version` hardening
-- Version initialized to `1L` in `insert()` path (was `null`)
-- InMemoryDriver uses `$and` filter for version checks
-- `VersionMismatchException` propagates without being wrapped in retry logic
-- Hardened `@Version` handling in `MorphiumWriterImpl` for edge cases
+#### Sequence `@WriteSafety` level
+Changed from `WAIT_FOR_SLAVE` to `BASIC` (w:1) — atomicity comes from `findAndModify`, not the write concern
 
-#### BufferedWriter: immediate execution for non-buffered entities
-When an entity had no `@WriteBuffer` annotation (buffer size = 0), writes were silently accumulated in the internal `opLog` and never flushed reliably. Now executes immediately via `BulkRequestContext`, matching user expectations.
+#### Index and capped collection checks
+- `setAutoIndexAndCappedCreationOnWrite()` now also sets CappedCheck
+- `checkIndices()` no longer reports missing indices for collections that don't exist yet
 
-#### BufferedWriter: `setIdIfNull` improvements
-- Added support for `UUID` (via `UUID.randomUUID()`) and `org.bson.types.ObjectId` (via `new ObjectId()`) as auto-generated ID types
-- Restored `RuntimeException` for unsupported ID types (e.g., `Date`, `Long`) to prevent silent creation of unreadable documents
+#### InMemoryDriver
+- Added no-op `runCommand(X509AuthCommand)` handler to prevent errors during X509 auth testing
 
-#### Sequence `@WriteSafety` for standalone MongoDB
-Changed `Sequence` entity from `WAIT_FOR_SLAVE` to `BASIC` write safety. The previous setting caused errors and log spam on standalone MongoDB instances without a replica set. Sequence correctness is guaranteed by the lock-based protocol, not by write concern propagation.
+#### DNS SRV resolution
+- Pure-Java `DnsSrvResolver` for `mongodb+srv://` connection strings (no JNDI dependency)
 
-#### Other fixes
-- Fixed NPE in writer operations
-- Added warning when no update results are received from MongoDB
-- Fixed `BsonEncoder` `java.time` type support
-- Fixed `@Version` behavior with pre-set IDs
+#### Thread context classloader (Quarkus compatibility)
+- `Class.forName()` calls in `checkCapped`, `checkIndices`, and `initializeAndConnect` now use the thread context classloader
 
-### Code Quality
-- Resolved all source compilation warnings (deprecation + unchecked) across the codebase
-- Resolved all test compilation warnings
-- Replaced deprecated `MorphiumConfig` API calls (`setDriverName`, `setRetriesOnNetworkError`) with new sub-object API
-- Fixed misleading Java Records support claim in READMEs
+### Added
+
+#### @Reference cascade features and cycle detection
+- **`@Reference(cascadeDelete = true)`** — Referenced entities are automatically deleted when the parent entity is deleted. Supports single references, collections, and maps. Cycle-safe via identity-based tracking.
+- **`@Reference(orphanRemoval = true)`** — Referenced entities that are no longer referenced after an update are automatically deleted. Works by comparing old and new reference IDs before/after store.
+- **Cycle detection in `ObjectMapperImpl.serialize()`** — Circular `@Reference` chains (A→B→A) are detected during serialization. Objects with IDs return a minimal `{_id: ...}` document; objects without IDs throw `IllegalStateException` with a clear error message.
+- New `CascadeHelper` utility class encapsulating all cascade logic with `ThreadLocal`-based cycle detection.
+- Comprehensive documentation: `docs/howtos/references-and-relationships.md`
+
+### Breaking Changes
+
+#### MorphiumDriverException is now unchecked (`extends RuntimeException`)
+- `MorphiumDriverException` now extends `RuntimeException` instead of `Exception` — aligning with every major Java database framework (MongoDB Driver, JPA/Hibernate, Spring Data, jOOQ)
+- Removed 40+ redundant `catch-and-wrap` blocks throughout the codebase that were forced by the checked nature of the exception
+- Database errors now propagate with their original type instead of being silently wrapped in a plain `RuntimeException`
+
+### Migration Notes
+
+#### `MorphiumDriverException`: `getCause()` pattern silently broken
+
+**Action required if** your code catches a `RuntimeException` and inspects the cause:
+
+```java
+// BROKEN after this release — instanceof check now always returns false
+catch (RuntimeException e) {
+    if (e.getCause() instanceof MorphiumDriverException) {
+        handleDbError((MorphiumDriverException) e.getCause());
+    }
+}
+```
+
+`MorphiumDriverException` is no longer wrapped — it propagates directly. The fix is to catch it by type:
+
+```java
+// Correct after this release
+catch (MorphiumDriverException e) {
+    handleDbError(e);
+}
+```
+
+This is a **silent behavioral change** — no compile error, the `instanceof` check simply returns `false`.
+All other existing `catch` blocks (`catch (Exception e)`, `catch (RuntimeException e)` without cause inspection) continue to work without modification.
+
+### Added
+
+#### @Version Annotation — Optimistic Locking
+- New `@Version` annotation for optimistic locking support
+- Version field is automatically initialized to `1L` on first insert
+- Updates use atomic `$and` filter: `{_id: ..., version: currentVersion}`
+- `VersionMismatchException` thrown on concurrent modification conflicts
+- Works with all drivers (PooledDriver, SingleMongoConnectDriver, InMemoryDriver)
+
+#### MONGODB-X509 Client Certificate Authentication
+- Native support for X.509 client certificate authentication
+- New `authMechanism` setting in `AuthSettings` (set to `"MONGODB-X509"`)
+- Integrates with `SslHelper` for mutual TLS (mTLS) configuration
+
+#### MongoDB Atlas SRV Connection Support
+- `mongodb+srv://` connection strings with automatic DNS SRV lookup
+- `MorphiumConfig.fromConnection()` parses SRV URIs and resolves cluster hosts
+- New `DnsSrvResolver` utility class (`de.caluga.morphium.driver.DnsSrvResolver`) — pure-Java DNS implementation via raw UDP/TCP queries, no JNDI dependency
+- Automatic TCP fallback when UDP response is truncated
+- Windows-compatible: skips `/etc/resolv.conf` on Windows, falls back to public DNS servers (8.8.8.8, 1.1.1.1)
+- TLS is enabled automatically for `mongodb+srv://` connections (Atlas requires it)
+
+#### @AutoSequence Annotation — Automatic Sequence Number Assignment
+- New `@AutoSequence` annotation for zero-boilerplate sequence number assignment on `store()`/`storeList()`
+- When a document is stored and the annotated field is unset (`null` for boxed types, `0` for primitives), Morphium automatically assigns the next value from the named sequence
+- Batch optimisation: `storeList()` allocates all required sequence numbers in a single lock+increment+unlock round-trip via `SequenceGenerator.getNextBatch(int)` instead of one round-trip per document
+- Supported field types: `long`, `Long`, `int`, `Integer`, `String`
+- Configurable: `name` (sequence name, default derives from field name), `startValue` (default 1), `inc` (step size, default 1)
+
+#### SequenceGenerator.getNextBatch(int) — Bulk Sequence Allocation
+- New method `getNextBatch(int count)` reserves a contiguous block of N sequence numbers in a single atomic operation
+- Reduces MongoDB round-trips from 5×N (per-value lock cycle) down to a constant 5 regardless of batch size
+- Returns a `long[]` array of exactly `count` consecutive values: `[first, first+inc, first+2*inc, ...]`
+- Throws `IllegalArgumentException` if count ≤ 0; single count delegates to `getNextValue()` for consistency
+
+#### Thread Context ClassLoader Support (Quarkus Compatibility)
+- `Class.forName()` calls replaced with `AnnotationAndReflectionHelper.classForName()` throughout
+- Uses `Thread.currentThread().getContextClassLoader()` as primary classloader, falling back to `Class.forName()`
+- Affects entity scanning, capped collection checks, and index checks at startup
+- Required for Quarkus and other frameworks with non-standard classloader hierarchies
+
+### Fixed
+
+#### Concurrent Double-Write in BufferedMorphiumWriterImpl
+- `flush()` and `flush(Class)` now use `opLog.remove(clz)` (atomic ownership transfer) instead of `opLog.get(clz)`
+- Prevents duplicate-key errors when two threads call `flush()` concurrently (e.g. explicit `storeList` flush + background `BufferedWriter_thread`)
+- Failed entries are re-queued for the next cycle to prevent silent data loss
+
+#### Standalone MongoDB Compatibility
+- **WriteSafety downgrade**: Entities with `@WriteSafety(level=MAJORITY)` or `w > 1` are automatically downgraded to `w:1` when connected to a standalone MongoDB (prevents write concern timeout)
+- **Write-buffer hardening**: `BufferedMorphiumWriterImpl` now executes immediately when no `@WriteBuffer` annotation is present instead of buffering
+- **Replica set detection**: Uses `driver.isReplicaSet()` (actual driver state) instead of the config flag which defaults to `true` regardless of actual topology
+- **Transaction warning**: `startTransaction()` logs a warning when connected to standalone MongoDB (transactions require a replica set)
+
+#### Index and Collection Checks
+- `setAutoIndexAndCappedCreationOnWrite()` now correctly sets both `IndexCheck` and `CappedCheck` flags (previously only set `IndexCheck`)
+- Collections that don't exist yet no longer trigger spurious "missing indices" warnings at startup — indices are created on first write instead
+- ID generation in `BufferedMorphiumWriterImpl` extended to support `UUID` and `ObjectId` types
+
+#### InMemoryDriver X509 Support
+- Added no-op `runCommand(X509AuthCommand)` handler in `InMemoryDriver` to prevent NPE when testing with X.509 authentication enabled
+
+### Changed
+
+#### Deprecated API Replacement in Tests
+- `setDriverName()` / `setRetriesOnNetworkError()` replaced with their new API equivalents in all test files
 
 ### Dependencies
-| Dependency | Previous | Updated |
-|---|---|---|
-| io.netty:netty-all | 4.1.100.Final | 4.2.9.Final |
-| org.mongodb:bson | 4.7.1 | 4.11.5 |
-| org.slf4j:slf4j-api | 2.0.0 | 2.0.17 |
-| ch.qos.logback:logback-core | 1.5.24 | 1.5.25 |
-| org.assertj:assertj-core | 3.23.1 | 3.27.7 |
+- **logback-core**: 1.5.24 → 1.5.25
+- **assertj-core**: 3.23.1 → 3.27.7
+- **slf4j-api**: 2.0.0 → 2.0.17
+- **bson**: 4.7.1 → 4.11.5
+- **netty-all**: 4.1.100.Final → 4.2.9.Final
+
+---
 
 ## [6.1.8]
 
