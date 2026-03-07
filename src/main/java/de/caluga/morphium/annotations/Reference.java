@@ -30,7 +30,8 @@ public @interface Reference {
 
     /**
      * If true, referenced entities will be deleted when the parent entity is deleted.
-     * Only applies to entity-based remove(Object) calls, not query-based deletes.
+     * Applies to both entity-based remove(Object) and query-based remove(Query) deletes.
+     * For query-based deletes, matching entities are loaded before deletion to trigger cascade.
      * Cycle-safe: circular cascadeDelete references will not cause infinite loops.
      */
     boolean cascadeDelete() default false;

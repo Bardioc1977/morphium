@@ -9,6 +9,7 @@ import de.caluga.morphium.driver.commands.ExplainCommand.ExplainVerbosity;
 import de.caluga.morphium.driver.commands.ListDatabasesCommand;
 import de.caluga.morphium.driver.wire.MongoConnection;
 import de.caluga.morphium.objectmapping.MorphiumObjectMapper;
+import de.caluga.morphium.query.MorphiumIterator;
 import de.caluga.morphium.query.Query;
 import de.caluga.morphium.writer.MorphiumWriter;
 import org.slf4j.Logger;
@@ -474,7 +475,7 @@ public abstract class MorphiumBase {
     }
 
     public <T> Map<String, Object> remove(Query<T> o) {
-        return getWriterForClass(o.getType()).remove(o, null);
+        return removeQueryWithCascade(o, null);
     }
 
     public <T> Map<String, Object> delete (Query<T> o, final AsyncOperationCallback<T> callback) {
@@ -482,7 +483,36 @@ public abstract class MorphiumBase {
     }
 
     public <T> Map<String, Object> remove(Query<T> o, final AsyncOperationCallback<T> callback) {
-        return getWriterForClass(o.getType()).remove(o, callback);
+        return removeQueryWithCascade(o, callback);
+    }
+
+    private <T> Map<String, Object> removeQueryWithCascade(Query<T> query, AsyncOperationCallback<T> callback) {
+        // Fast path: no cascade fields → direct bulk delete (existing behavior)
+        if (query.getType() == null || !CascadeHelper.hasCascadeDelete(getARHelper(), query.getType())) {
+            return getWriterForClass(query.getType()).remove(query, callback);
+        }
+
+        // Slow path: load entities, cascade per entity, then bulk delete
+        MorphiumIterator<T> iter = query.asIterable(100);
+        int count = 0;
+        try {
+            while (iter.hasNext()) {
+                T entity = iter.next();
+                CascadeHelper.cascadeDelete(this, entity);
+                count++;
+            }
+        } finally {
+            iter.close();
+        }
+
+        if (count > 1000 && log.isWarnEnabled()) {
+            log.warn("Query-based cascade delete loaded {} entities of type {} before deleting. "
+                + "Consider removing cascade references manually and using a direct query delete for better performance.",
+                count, query.getType().getSimpleName());
+        }
+
+        // Parent entities via bulk delete
+        return getWriterForClass(query.getType()).remove(query, callback);
     }
 
     public <T> Map<String, Object> pushPull(boolean push, Query<T> query, String field, Object value, boolean upsert, boolean multiple, AsyncOperationCallback<T> callback) {
@@ -536,10 +566,12 @@ public abstract class MorphiumBase {
         }
 
         for (T o : bufferedDel) {
+            CascadeHelper.cascadeDelete(this, o);
             getConfig().writerSettings().getBufferedWriter().remove(o, forceCollectionName, callback);
         }
 
         for (T o : directDel) {
+            CascadeHelper.cascadeDelete(this, o);
             getConfig().writerSettings().getWriter().remove(o, forceCollectionName, callback);
         }
     }
@@ -554,6 +586,7 @@ public abstract class MorphiumBase {
         ArrayList<T> bufferedDel = new ArrayList<>();
 
         for (T o : lst) {
+            CascadeHelper.cascadeDelete(this, o);
             if (getARHelper().isBufferedWrite(o.getClass()) && !"InMemDriver".equals(getDriver().getName())) {
                 bufferedDel.add(o);
             } else {

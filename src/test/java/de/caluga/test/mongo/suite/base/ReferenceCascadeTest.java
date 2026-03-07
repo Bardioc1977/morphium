@@ -4,6 +4,7 @@ import de.caluga.morphium.Morphium;
 import de.caluga.morphium.annotations.*;
 import de.caluga.morphium.annotations.caching.NoCache;
 import de.caluga.morphium.driver.MorphiumId;
+import de.caluga.morphium.query.Query;
 import de.caluga.test.mongo.suite.data.UncachedObject;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -410,8 +411,261 @@ public class ReferenceCascadeTest extends MultiDriverTestBase {
     }
 
     // ========================
+    // Query-based Cascade Delete Tests
+    // ========================
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQuery(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+        morphium.clearCollection(UncachedObject.class);
+
+        UncachedObject child = new UncachedObject("child", 1);
+        morphium.store(child);
+        MorphiumId childId = child.getMorphiumId();
+
+        CascadeParent parent = new CascadeParent();
+        parent.name = "queryParent";
+        parent.cascadeChild = child;
+        morphium.store(parent);
+
+        Thread.sleep(200);
+
+        // Delete parent via query — should cascade-delete child
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("queryParent");
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        assertEquals(0, morphium.createQueryFor(CascadeParent.class).countAll(),
+            "Parent should be deleted by query");
+        assertNull(morphium.findById(UncachedObject.class, childId),
+            "Child should be cascade-deleted via query delete");
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryMultipleParents(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+        morphium.clearCollection(UncachedObject.class);
+
+        List<MorphiumId> childIds = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            UncachedObject child = new UncachedObject("child" + i, i);
+            morphium.store(child);
+            childIds.add(child.getMorphiumId());
+
+            CascadeParent parent = new CascadeParent();
+            parent.name = "multiParent";
+            parent.cascadeChild = child;
+            morphium.store(parent);
+        }
+
+        Thread.sleep(200);
+
+        // Delete all 3 parents via query
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("multiParent");
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        assertEquals(0, morphium.createQueryFor(CascadeParent.class).countAll(),
+            "All parents should be deleted");
+        for (MorphiumId childId : childIds) {
+            assertNull(morphium.findById(UncachedObject.class, childId),
+                "Child " + childId + " should be cascade-deleted");
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryWithCollection(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+        morphium.clearCollection(UncachedObject.class);
+
+        List<UncachedObject> children = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            UncachedObject child = new UncachedObject("listChild" + i, i);
+            morphium.store(child);
+            children.add(child);
+        }
+
+        CascadeParent parent = new CascadeParent();
+        parent.name = "listParent";
+        parent.cascadeChildren = new ArrayList<>(children);
+        morphium.store(parent);
+
+        Thread.sleep(200);
+
+        // Delete parent via query — should cascade-delete all children in the list
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("listParent");
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        assertEquals(0, morphium.createQueryFor(CascadeParent.class).countAll(),
+            "Parent should be deleted");
+        for (UncachedObject child : children) {
+            assertNull(morphium.findById(UncachedObject.class, child.getMorphiumId()),
+                "List child " + child.getCounter() + " should be cascade-deleted");
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryNoCascadeFields(Morphium morphium) throws Exception {
+        morphium.clearCollection(NoCascadeEntity.class);
+
+        for (int i = 0; i < 5; i++) {
+            NoCascadeEntity e = new NoCascadeEntity();
+            e.name = "noCascade";
+            e.value = i;
+            morphium.store(e);
+        }
+
+        Thread.sleep(200);
+
+        // Entity without cascadeDelete → direct bulk delete, no extra loading
+        Query<NoCascadeEntity> query = morphium.createQueryFor(NoCascadeEntity.class)
+            .f("name").eq("noCascade");
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        assertEquals(0, morphium.createQueryFor(NoCascadeEntity.class).countAll(),
+            "All entities should be deleted via direct bulk delete");
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryWithLimit(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+        morphium.clearCollection(UncachedObject.class);
+
+        List<MorphiumId> allChildIds = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            UncachedObject child = new UncachedObject("limitChild" + i, i);
+            morphium.store(child);
+            allChildIds.add(child.getMorphiumId());
+
+            CascadeParent parent = new CascadeParent();
+            parent.name = "limitParent";
+            parent.cascadeChild = child;
+            morphium.store(parent);
+        }
+
+        Thread.sleep(200);
+
+        // Delete with limit(2) — cascade should still fire for matched entities
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("limitParent").limit(2);
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        // At least some children should be cascade-deleted (iterator respects limit)
+        long deletedChildren = allChildIds.stream()
+            .filter(id -> morphium.findById(UncachedObject.class, id) == null)
+            .count();
+        assertTrue(deletedChildren > 0,
+            "Cascade delete should have deleted at least some children");
+        assertTrue(deletedChildren < 4,
+            "Not all children should be deleted when parent query has limit");
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryCircular(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeNodeA.class);
+        morphium.clearCollection(CascadeNodeB.class);
+
+        CascadeNodeA nodeA = new CascadeNodeA();
+        nodeA.name = "circularA";
+        morphium.store(nodeA);
+
+        CascadeNodeB nodeB = new CascadeNodeB();
+        nodeB.name = "circularB";
+        morphium.store(nodeB);
+
+        nodeA.other = nodeB;
+        nodeB.other = nodeA;
+        morphium.store(nodeA);
+        morphium.store(nodeB);
+
+        Thread.sleep(200);
+
+        // Delete via query — circular references should not cause infinite loop
+        Query<CascadeNodeA> query = morphium.createQueryFor(CascadeNodeA.class)
+            .f("name").eq("circularA");
+        assertDoesNotThrow(() -> morphium.delete(query),
+            "Query cascade delete with circular references should not cause infinite loop");
+
+        Thread.sleep(200);
+
+        assertNull(morphium.findById(CascadeNodeA.class, nodeA.id),
+            "nodeA should be deleted");
+        assertNull(morphium.findById(CascadeNodeB.class, nodeB.id),
+            "nodeB should be cascade-deleted");
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryEmpty(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+
+        Thread.sleep(200);
+
+        // Query matches 0 documents — should not cause errors
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("nonexistent");
+        assertDoesNotThrow(() -> morphium.delete(query),
+            "Query delete matching 0 documents should not cause errors");
+    }
+
+    @ParameterizedTest
+    @MethodSource("getMorphiumInstancesNoSingle")
+    public void testCascadeDeleteViaQueryNoCascadeRefUntouched(Morphium morphium) throws Exception {
+        morphium.clearCollection(CascadeParent.class);
+        morphium.clearCollection(UncachedObject.class);
+
+        UncachedObject cascadeChild = new UncachedObject("cascadeChild", 1);
+        morphium.store(cascadeChild);
+        MorphiumId cascadeChildId = cascadeChild.getMorphiumId();
+
+        UncachedObject normalChild = new UncachedObject("normalChild", 2);
+        morphium.store(normalChild);
+        MorphiumId normalChildId = normalChild.getMorphiumId();
+
+        CascadeParent parent = new CascadeParent();
+        parent.name = "mixedParent";
+        parent.cascadeChild = cascadeChild;
+        parent.normalChild = normalChild;
+        morphium.store(parent);
+
+        Thread.sleep(200);
+
+        // Delete parent via query
+        Query<CascadeParent> query = morphium.createQueryFor(CascadeParent.class)
+            .f("name").eq("mixedParent");
+        morphium.delete(query);
+        Thread.sleep(200);
+
+        assertNull(morphium.findById(UncachedObject.class, cascadeChildId),
+            "cascadeDelete child should be deleted");
+        assertNotNull(morphium.findById(UncachedObject.class, normalChildId),
+            "Normal reference child should NOT be deleted (cascadeDelete=false)");
+    }
+
+    // ========================
     // Test Entities
     // ========================
+
+    @Entity
+    @NoCache
+    public static class NoCascadeEntity {
+        @Id
+        MorphiumId id;
+        String name;
+        int value;
+    }
 
     @Entity
     @NoCache
