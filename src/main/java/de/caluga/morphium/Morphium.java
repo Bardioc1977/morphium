@@ -54,6 +54,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1923,6 +1924,9 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
                             val = now;
                         } else if (f.getType().equals(Date.class)) {
                             val = new Date(now);
+                        } else if (f.getType().equals(LocalDateTime.class)) {
+                            val = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now),
+                                    java.time.ZoneId.systemDefault());
                         } else if (f.getType().equals(String.class)) {
                             CreationTime ctField = f.getAnnotation(CreationTime.class);
                             SimpleDateFormat df = new SimpleDateFormat(ctField.dateFormat());
@@ -1953,6 +1957,9 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
                         val = now;
                     } else if (f.getType().equals(Date.class)) {
                         val = new Date(now);
+                    } else if (f.getType().equals(LocalDateTime.class)) {
+                        val = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now),
+                                java.time.ZoneId.systemDefault());
                     } else if (f.getType().equals(String.class)) {
                         LastChange ctField = f.getAnnotation(LastChange.class);
                         SimpleDateFormat df = new SimpleDateFormat(ctField.dateFormat());
