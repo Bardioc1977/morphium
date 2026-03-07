@@ -82,18 +82,67 @@ public <T> void ensureIndex(Class<T> type, Map<String, Object> index)
 public <T> void ensureIndex(Class<T> type, String... fields)
 ```
 
+#### Backend Detection
+
+```java
+// Get the detected backend type (automatic, no configuration needed)
+public BackendType getBackendType()
+// → MONGODB, COSMOSDB, MORPHIUM_SERVER, or IN_MEMORY
+
+// Access driver-level detection
+public MorphiumDriver getDriver()
+// driver.isCosmosDB()        → true if Azure CosmosDB
+// driver.isMorphiumServer()  → true if MorphiumServer
+// driver.isInMemoryBackend() → true if InMemoryDriver
+```
+
+See [Azure CosmosDB Compatibility](./cosmosdb-compatibility.md) for details on automatic detection and compatibility guards.
+
 #### Transaction Support
 
 ```java
-// Transaction management
+// Transaction management (throws UnsupportedOperationException on CosmosDB)
 public void beginTransaction()
-public void commitTransaction() 
+public void commitTransaction()
 public void abortTransaction()
 
 // Check transaction state
 public boolean isTransactionInProgress()
 public MorphiumTransactionContext getTransactionContext()
 ```
+
+#### Per-Thread Behavior Overrides
+
+Morphium allows overriding certain global settings on a per-thread basis. This is useful for temporarily disabling caching or auto-values within a specific request or task.
+
+```java
+// Disable/enable auto-values for the current thread
+public void disableAutoValuesForThread()
+public void enableAutoValuesForThread()
+public boolean isAutoValuesEnabledForThread()
+
+// Disable/enable read cache for the current thread
+public void disableReadCacheForThread()
+public void enableReadCacheForThread()
+public boolean isReadCacheEnabledForThread()
+
+// Disable/enable write buffer for the current thread
+public void disableWriteBufferForThread()
+public void enableWriteBufferForThread()
+public boolean isWriteBufferEnabledForThread()
+
+// Disable/enable async writes for the current thread
+public void disableAsyncWritesForThread()
+public void enableAsyncWritesForThread()
+public boolean isAsyncWritesEnabledForThread()
+
+// Reset ALL per-thread overrides back to defaults (= follow global config)
+public void resetThreadLocalOverrides()
+```
+
+**Important:** These overrides are backed by `ThreadLocal` and are **not** automatically cleaned up. In thread-pool or virtual-thread environments, always call `resetThreadLocalOverrides()` at the end of a request or task to prevent state from leaking between threads.
+
+> **Future improvement:** Once `java.lang.ScopedValue` ([JEP 487](https://openjdk.org/jeps/487)) is finalized (currently in preview as of JDK 24), these thread-local overrides should be replaced with scoped values. Scoped values provide automatic cleanup at scope exit and are inherently safe with virtual threads — eliminating the need for manual `resetThreadLocalOverrides()` calls.
 
 ## Query API
 
@@ -446,13 +495,34 @@ Enables **optimistic locking**. Morphium automatically:
 
 The exception carries `getExpectedVersion()` (the version the caller held) for diagnostic and retry logic. See `docs/howtos/optimistic-locking.md` for a complete guide.
 
+**@AutoSequence**
+```java
+@AutoSequence(
+    name = ".",         // "." = derive sequence name from MongoDB field name (default)
+                        // or set an explicit name, e.g. name = "order_number"
+    startValue = 1,     // First value when sequence is created for the first time
+    inc = 1             // Step size between consecutive values
+)
+```
+
+Marks a field for **automatic sequence number assignment**. When a document is stored and the annotated field is unset (`null` for boxed types, `0` for primitives), Morphium assigns the next value from the named sequence. Fields with existing values are never overwritten.
+
+- Supported types: `long`, `Long`, `int`, `Integer`, `String`
+- **Batch optimisation**: `storeList()` allocates all required numbers in a single lock+increment round-trip via `SequenceGenerator.getNextBatch(int)` instead of one round-trip per document
+- Sequence generators are cached per Morphium instance and reused across calls
+
 **@Reference**
 ```java
 @Reference(
-    lazyLoading = false,    // Enable lazy loading
-    fieldName = "ref_field" // Custom field name
+    lazyLoading = false,    // Enable lazy loading via CGLib proxy
+    fieldName = "ref_field", // Custom field name in MongoDB
+    automaticStore = true,  // Auto-persist unreferenced objects on store
+    targetCollection = ".", // Override target collection (default: derived from type)
+    cascadeDelete = false,  // Delete referenced entities when parent is deleted
+    orphanRemoval = false   // Delete dereferenced entities on parent update
 )
 ```
+See `docs/howtos/references-and-relationships.md` for a comprehensive guide.
 
 ### Index Annotations
 
@@ -642,6 +712,35 @@ Entity entity = mapper.unmarshall(Entity.class, bson);
 // JSON support
 String json = mapper.marshall(entity).toString();
 Entity entity = mapper.unmarshall(Entity.class, json);
+```
+
+### SequenceGenerator
+
+**Distributed Sequence Numbers:**
+```java
+// Create a sequence generator
+SequenceGenerator sg = new SequenceGenerator(morphium, "order_seq", 1 /* inc */, 1 /* startValue */);
+
+// Get next value (single)
+long next = sg.getNextValue();
+
+// Get a batch of values (bulk allocation — single lock cycle)
+long[] batch = sg.getNextBatch(1000);
+// returns [1, 2, 3, ..., 1000] for inc=1, startValue=1
+```
+
+`getNextBatch(int count)` reserves a contiguous block of `count` values in one atomic lock+increment+unlock round-trip. For bulk inserts of N records, this replaces N individual `getNextValue()` calls, reducing MongoDB round-trips from 5 x N to a constant 5.
+
+### DnsSrvResolver
+
+**DNS SRV Resolution (for MongoDB Atlas):**
+```java
+// Resolve SRV records (pure-Java, no JNDI)
+List<String> hosts = DnsSrvResolver.resolve("_mongodb._tcp.cluster0.abc123.mongodb.net");
+// returns ["shard-00-00.abc123.mongodb.net:27017", ...]
+
+// Get system DNS servers (respects /etc/resolv.conf on Linux/macOS, public fallbacks on Windows)
+List<InetAddress> servers = DnsSrvResolver.systemDnsServers();
 ```
 
 This API reference provides comprehensive documentation of all major Morphium APIs, including method signatures, parameters, and usage examples.

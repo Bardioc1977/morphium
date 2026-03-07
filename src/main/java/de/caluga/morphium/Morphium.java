@@ -814,6 +814,14 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     /**
+     * Returns the detected backend type (MongoDB, CosmosDB, MorphiumServer, InMemory).
+     * Convenience method delegating to the driver.
+     */
+    public BackendType getBackendType() {
+        return morphiumDriver.getBackendType();
+    }
+
+    /**
      * Builds a key for shared driver lookup based on sorted hosts and database name.
      * This ensures that the same driver is reused for connections to the same MongoDB cluster.
      */
@@ -926,6 +934,32 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
             // DBCollection collection = null;
 
             try {
+                // CosmosDB: ignore @Capped, create regular collection instead
+                if (morphiumDriver.isCosmosDB()) {
+                    boolean exists = morphiumDriver.exists(getConfig().connectionSettings().getDatabase(), coll);
+                    if (!exists) {
+                        log.warn("CosmosDB: @Capped not supported — creating regular collection '{}'", coll);
+                        MongoConnection primaryConnection = null;
+                        CreateCommand create = null;
+                        try {
+                            primaryConnection = morphiumDriver.getPrimaryConnection(getWriteConcernForClass(c));
+                            create = new CreateCommand(primaryConnection);
+                            create.setColl(coll).setDb(getDatabase());
+                            create.execute();
+                            create.releaseConnection();
+                            create = null;
+                            primaryConnection = null;
+                        } finally {
+                            if (create != null) {
+                                create.releaseConnection();
+                            } else if (primaryConnection != null) {
+                                morphiumDriver.releaseConnection(primaryConnection);
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 boolean exists = morphiumDriver.exists(getConfig().connectionSettings().getDatabase(), coll);
 
                 if (exists && morphiumDriver.isCapped(getConfig().connectionSettings().getDatabase(), coll)) {
@@ -2870,6 +2904,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     /////
 
     public <T> Map<String, Object> explainMapReduce(Class <? extends T > type, String map, String reduce, ExplainVerbosity verbose) throws MorphiumDriverException {
+        if (getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "MapReduce is not supported on CosmosDB. "
+                + "Use the Aggregation framework: morphium.createAggregator()");
+        }
         MongoConnection readConnection = morphiumDriver.getReadConnection(getReadPreferenceForClass(type));
 
         try {
@@ -2881,6 +2920,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public <T> List<T> mapReduce(Class <? extends T > type, String map, String reduce) throws MorphiumDriverException {
+        if (getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "MapReduce is not supported on CosmosDB. "
+                + "Use the Aggregation framework: morphium.createAggregator()");
+        }
         MongoConnection readConnection = morphiumDriver.getReadConnection(getReadPreferenceForClass(type));
 
         try {
@@ -2980,6 +3024,26 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
         return (disableAsyncWrites.get() == null || disableAsyncWrites.get()) && getConfig().cacheSettings().isAsyncWritesEnabled();
     }
 
+    /**
+     * Resets all per-thread overrides (autoValues, readCache, writeBuffer, asyncWrites)
+     * back to their defaults (= follow global config).
+     * <p>
+     * Call this at the end of a request or task to prevent state leaking between
+     * threads in a thread pool. This is especially important with virtual threads
+     * where thread-local state is not automatically cleaned up.
+     * <p>
+     * <b>Future:</b> Once {@code java.lang.ScopedValue} (JEP 487) is finalized,
+     * these thread-local overrides should be replaced with scoped values, which
+     * provide automatic cleanup at scope exit and are inherently safe with
+     * virtual threads.
+     */
+    public void resetThreadLocalOverrides() {
+        enableAutoValues.remove();
+        enableReadCache.remove();
+        disableWriteBuffer.remove();
+        disableAsyncWrites.remove();
+    }
+
     public void queueTask(Runnable runnable) {
         boolean queued = false;
 
@@ -3002,6 +3066,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public void startTransaction() {
+        if (getDriver() != null && getDriver().isCosmosDB()) {
+            throw new UnsupportedOperationException(
+                "Transactions are not supported on Azure CosmosDB. "
+                + "Use atomic operations (inc/dec/set) for single-document consistency.");
+        }
         if (getDriver() != null && !getDriver().isReplicaSet()) {
             log.warn("Transactions require a replica set. Current MongoDB is standalone. "
                     + "Transaction will likely fail.");
@@ -3058,6 +3127,10 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public <T> void watch(String collectionName, int maxWaitTime, boolean updateFull, List<Map<String, Object >> pipeline, ChangeStreamListener lst) {
+        if (getDriver().isCosmosDB()) {
+            log.warn("CosmosDB: Change streams have limited support. "
+                   + "Delete events may not be received.");
+        }
         WatchCommand settings = null;
         try {
             MongoConnection primaryConnection = getDriver().getPrimaryConnection(null);
@@ -3190,6 +3263,11 @@ public class Morphium extends MorphiumBase implements AutoCloseable {
     }
 
     public Map < Class<?>, Map<String, Integer >> checkCapped() {
+        if (morphiumDriver.isCosmosDB()) {
+            log.debug("CosmosDB: skipping capped collection check (not supported)");
+            return Collections.emptyMap();
+        }
+
         Map < Class<?>, Map<String, Integer >> uncappedCollections = new HashMap<>();
 
         try (ScanResult scanResult = new ClassGraph().enableAnnotationInfo().enableClassInfo().scan()) {

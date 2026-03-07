@@ -29,7 +29,7 @@ Morphium includes a complete in-memory MongoDB-compatible implementation for tes
   - Perfect for CI/CD pipelines, integration testing, and microservices development
   - Any MongoDB client (Java, Python, Node.js, Go, etc.) can connect to it
   - Supports **Replica Sets** (experimental) and **Persistence (Snapshots)**
-  - Run with: `java -jar target/morphium-6.1.1-server-cli.jar --port 27017`
+  - Run with: `java -jar target/morphium-6.2.0-SNAPSHOT-server-cli.jar --port 27017`
 
 ## Production Deployment
 - **[Production Deployment Guide](./production-deployment-guide.md)** - Complete guide for deploying Morphium in production environments
@@ -41,6 +41,9 @@ Morphium includes a complete in-memory MongoDB-compatible implementation for tes
 - **[Monitoring & Metrics Guide](./monitoring-metrics-guide.md)** - Comprehensive monitoring with DriverStats and performance metrics
 - **[Troubleshooting Guide](./troubleshooting-guide.md)** - Common issues, diagnosis, and solutions
 - **[Architecture Overview](./architecture-overview.md)** - Internal architecture and component relationships
+
+## Cloud & Compatibility
+- **[Azure CosmosDB Compatibility](./cosmosdb-compatibility.md)** - Automatic CosmosDB detection, compatibility guards, and feature matrix
 
 ## Reference
 - **[API Reference](./api-reference.md)** - Complete API documentation with examples
@@ -74,5 +77,6 @@ Benefits
 - SSL/TLS support for secure connections (since v6.0).
 
 Limitations
-- No MongoDB Atlas support.
 - Some advanced features of the official driver are not available.
+- MongoDB Atlas is supported since v6.0 via SSL/TLS (see [SSL/TLS Connections](./ssl-tls.md)).
+- Azure CosmosDB is supported with automatic detection and compatibility guards (see [CosmosDB Compatibility](./cosmosdb-compatibility.md)).
