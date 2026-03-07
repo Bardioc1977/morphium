@@ -34,8 +34,8 @@ Understanding Morphium's internal architecture and component relationships.
               └─────────────────┬───────────────────┘
                                 │
               ┌─────────────────────────────────────┐
-              │            MongoDB                 │
-              │      (Replica Set / Cluster)       │
+              │       Backend (auto-detected)      │
+              │  MongoDB │ CosmosDB │ InMemory     │
               └─────────────────────────────────────┘
 ```
 
@@ -97,6 +97,41 @@ PooledDriver {
 - **No network communication**
 - **Supports most MongoDB operations** including aggregation
 - **Perfect for unit testing**
+
+### Backend Detection
+
+Morphium automatically detects the connected backend type during the `hello` handshake. This enables runtime compatibility guards without manual configuration.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    hello Handshake                               │
+│                                                                  │
+│  ┌────────────┐    hostname check    ┌──────────────────────┐   │
+│  │ Connection │──────────────────────│ CosmosDB Detection   │   │
+│  │ established│    setName check     │ (PooledDriver /      │   │
+│  │            │──────────────────────│  SingleMongoConnect)  │   │
+│  └────────────┘    seed host check   └──────────┬───────────┘   │
+│                                                  │               │
+│                                      ┌───────────▼───────────┐  │
+│                                      │ BackendType enum      │  │
+│                                      │ MONGODB │ COSMOSDB    │  │
+│                                      │ MORPHIUM_SERVER       │  │
+│                                      │ IN_MEMORY             │  │
+│                                      └───────────┬───────────┘  │
+│                                                  │               │
+│                                      ┌───────────▼───────────┐  │
+│                                      │ Compatibility Guards  │  │
+│                                      │ (Morphium.java)       │  │
+│                                      └───────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Detection signals for CosmosDB:
+- **Hostname**: `*.mongo.cosmos.azure.com` or `*.mongocluster.cosmos.azure.com`
+- **Seed hosts**: Configured hosts matching CosmosDB patterns
+- **Handshake fallback**: `setName == "globaldb"` + SSL enabled
+
+See [Azure CosmosDB Compatibility](./cosmosdb-compatibility.md) for the full feature matrix and guard behavior.
 
 ### 3. Object Mapping System
 

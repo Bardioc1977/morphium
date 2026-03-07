@@ -42,6 +42,9 @@ Morphium includes a complete in-memory MongoDB-compatible implementation for tes
 - **[Troubleshooting Guide](./troubleshooting-guide.md)** - Common issues, diagnosis, and solutions
 - **[Architecture Overview](./architecture-overview.md)** - Internal architecture and component relationships
 
+## Cloud & Compatibility
+- **[Azure CosmosDB Compatibility](./cosmosdb-compatibility.md)** - Automatic CosmosDB detection, compatibility guards, and feature matrix
+
 ## Reference
 - **[API Reference](./api-reference.md)** - Complete API documentation with examples
 
@@ -74,5 +77,6 @@ Benefits
 - SSL/TLS support for secure connections (since v6.0).
 
 Limitations
-- No MongoDB Atlas support.
 - Some advanced features of the official driver are not available.
+- MongoDB Atlas is supported since v6.0 via SSL/TLS (see [SSL/TLS Connections](./ssl-tls.md)).
+- Azure CosmosDB is supported with automatic detection and compatibility guards (see [CosmosDB Compatibility](./cosmosdb-compatibility.md)).
