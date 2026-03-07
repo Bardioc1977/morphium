@@ -1,4 +1,4 @@
-# Morphium 6.1.1
+# Morphium 6.2.0
 
 **Feature-reiches MongoDB ODM und Messaging-Framework für Java 21+**
 
@@ -49,44 +49,33 @@ _* Richtwerte aus internen Messungen; tatsächliche Werte hängen von Hardware u
 - Production-Deployment: `docs/production-deployment-guide.md`
 - Monitoring & Troubleshooting: `docs/monitoring-metrics-guide.md`
 
-## 🚀 Neu in Version 6.1
+## 🚀 Neu in Version 6.2
 
-### MorphiumServer – Der "Drop-in"-Ersatz
-Morphium 6.1 macht den **MorphiumServer** zu einem echten "Drop-in"-Ersatz für MongoDB in Entwicklungs- und Testumgebungen:
-- ✅ **Volle Wire-Protocol-Unterstützung**: Verwendung jedes Standard-MongoDB-Clients (mongosh, Compass, etc.)
-- ✅ **CLI-Tooling**: Eigener `morphium-server-cli` für einfache Bereitstellung
-- ✅ **Replica-Set-Emulation**: Testen von Multi-Node-Cluster-Verhalten ohne echtes MongoDB
-- ✅ **Persistenz**: Snapshot-Unterstützung zur Bewahrung von In-Memory-Daten über Neustarts hinweg
+- **`@AutoSequence`** — Automatische Sequenznummernvergabe bei `store()` / `storeList()` mit O(1) Batch-Allokation
+- **Azure CosmosDB** — Automatische Erkennung via `hello`-Handshake mit eingebauten Kompatibilitäts-Guards ([Details](docs/cosmosdb-compatibility.md))
+- **`BackendType` Enum** — `morphium.getBackendType()` liefert MONGODB, COSMOSDB, MORPHIUM_SERVER oder IN_MEMORY
+- **`MorphiumDriverException` unchecked** — Erweitert `RuntimeException`, eliminiert 40+ catch-wrap-Blöcke
+- **Standalone MongoDB** — Automatisches WriteConcern-Downgrade und Transaktions-Warnungen
+- **DNS SRV** — Pure-Java `DnsSrvResolver` für `mongodb+srv://` (kein JNDI)
+- **Quarkus** — Thread-Context-Classloader-Unterstützung in allen `Class.forName()`-Aufrufen
 
-## 🚀 Neu in Version 6.0
+Siehe [CHANGELOG](CHANGELOG.md) für alle Details.
 
-### JDK 21 & Moderne Java-Features
-- **Virtual Threads**: Messaging-System optimiert für Project Loom
-- **Pattern Matching**: Verbesserte Code-Klarheit und Typ-Sicherheit
-- **Records**: Noch nicht als `@Entity` oder `@Embedded` unterstützt (siehe [#116](https://github.com/sboesebeck/morphium/issues/116))
-- **Sealed Classes**: Bessere Typ-Hierarchien in Domain-Models
+<details>
+<summary>Vorherige Versionen (6.0 – 6.1)</summary>
 
-### Treiber & Konnektivität
-- **SSL/TLS-Unterstützung**: Sichere Verbindungen zu MongoDB-Instanzen (seit v6.0)
-- **Virtual Threads** im Treiber für optimale Performance
+### v6.1
+- **MorphiumServer** als Drop-in-Ersatz für MongoDB (Wire Protocol, CLI, Replica-Set-Emulation, Persistenz)
+- **MONGODB-X509** Client-Zertifikat-Authentifizierung
+- **`@Version`** Optimistic Locking
 
-### Verbessertes Messaging-System
-- **Weniger Duplikate**: Optimierte Message-Processing-Logik
-- **Virtual Thread Integration**: Bessere Concurrency-Performance
-- **Höherer Durchsatz**: Interne Benchmarks zeigen deutliche Steigerungen
-- **Distributed Locking**: Verbesserte Multi-Instance-Koordination
-
-### In-Memory-Treiber für Testing
-- **Keine MongoDB benötigt**: Komplette Test-Suite ohne externe Abhängigkeiten
-- **Deutlich schnellere Tests**: Profitieren von reinem In-Memory-Zugriff
-- **CI/CD-freundlich**: Perfekt für Continuous Integration Pipelines
-- **Breite Feature-Unterstützung**: Viele MongoDB-Operationen, mit dokumentierten Ausnahmen
-
-### Umfassende Dokumentation
-- Komplette Neuschreibung aller Guides
-- Praxis-Beispiele und Use Cases
-- Migration-Guide von 5.x
-- Architektur-Details und Best Practices
+### v6.0
+- **Java 21** mit Virtual Threads
+- **SSL/TLS** für sichere Verbindungen
+- **In-Memory-Treiber** mit ~93% MongoDB Feature-Abdeckung
+- **Messaging** Verbesserungen (weniger Duplikate, Distributed Locking, höherer Durchsatz)
+- Komplette Dokumentations-Überarbeitung
+</details>
 
 ## Anforderungen & Abhaengigkeiten
 - Java 21 oder neuer
@@ -98,12 +87,12 @@ Maven-Abhaengigkeiten:
 <dependency>
   <groupId>de.caluga</groupId>
   <artifactId>morphium</artifactId>
-  <version>[6.1.1,)</version>
+  <version>[6.2.0,)</version>
 </dependency>
 <dependency>
   <groupId>org.mongodb</groupId>
   <artifactId>bson</artifactId>
-  <version>4.7.1</version>
+  <version>4.11.5</version>
 </dependency>
 ```
 
@@ -117,7 +106,7 @@ Migration von v5? → `docs/howtos/migration-v5-to-v6.md`
 <dependency>
   <groupId>de.caluga</groupId>
   <artifactId>morphium</artifactId>
-  <version>6.1.1</version>
+  <version>6.2.0</version>
 </dependency>
 ```
 
@@ -300,13 +289,13 @@ MorphiumServer ist ein eigenständiger Prozess, der das MongoDB Wire Protocol im
 
 ```bash
 # Server starten
-java -jar target/morphium-6.1.1-server-cli.jar
+java -jar target/morphium-6.2.0-server-cli.jar
 
 # Clients verbinden (z.B. MongoDB Compass, mongosh)
 mongosh mongodb://localhost:27017
 
 # Start mit Persistenz (Snapshots)
-java -jar target/morphium-6.1.1-server-cli.jar --dump-dir ./data --dump-interval 300
+java -jar target/morphium-6.2.0-server-cli.jar --dump-dir ./data --dump-interval 300
 ```
 
 **Replica Set Unterstützung (experimentell)**
@@ -314,7 +303,7 @@ java -jar target/morphium-6.1.1-server-cli.jar --dump-dir ./data --dump-interval
 MorphiumServer unterstützt eine grundlegende Replica-Set-Emulation. Starten Sie mehrere Instanzen mit demselben Replica-Set-Namen und derselben Seed-Liste:
 
 ```bash
-java -jar target/morphium-6.1.1-server-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
+java -jar target/morphium-6.2.0-server-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
 ```
 
 **Use Cases:**
@@ -382,6 +371,6 @@ Vielen Dank an alle Contributors die diese Release möglich gemacht haben, und a
 
 **Upgrade geplant?** Siehe [Migration Guide](docs/howtos/migration-v5-to-v6.md) für Schritt-für-Schritt-Anleitung.
 
-Viel Erfolg mit Morphium 6.1.1! 🚀
+Viel Erfolg mit Morphium 6.2.0! 🚀
 
 *Stephan Bösebeck & das Morphium-Team*
