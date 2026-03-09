@@ -1350,34 +1350,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="MongoDB Atlas Example">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#recommended-using-mongodbsrv-connection-string" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recommended: Using mongodb+srv:// Connection String
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alternative-manual-host-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alternative: Manual Host Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2023,34 +1995,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="MongoDB Atlas Example">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#recommended-using-mongodbsrv-connection-string" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recommended: Using mongodb+srv:// Connection String
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alternative-manual-host-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alternative: Manual Host Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2276,36 +2220,28 @@
 </span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span>-srcstorepass<span class="w"> </span>changeit<span class="w"> </span>-deststorepass<span class="w"> </span>changeit
 </span></code></pre></div>
 <h2 id="mongodb-atlas-example">MongoDB Atlas Example<a class="headerlink" href="#mongodb-atlas-example" title="Permanent link">&para;</a></h2>
-<h3 id="recommended-using-mongodbsrv-connection-string">Recommended: Using <code>mongodb+srv://</code> Connection String<a class="headerlink" href="#recommended-using-mongodbsrv-connection-string" title="Permanent link">&para;</a></h3>
-<p>The simplest way to connect to MongoDB Atlas is via the SRV connection string.
-Morphium resolves the <code>mongodb+srv://</code> URI automatically, performing DNS SRV
-lookup to discover all cluster hosts -- no need to specify individual hosts manually.</p>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MorphiumConfig</span><span class="p">.</span><span class="na">fromConnection</span><span class="p">(</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span><span class="s">&quot;mongodb+srv://atlasUser:atlasPassword@cluster0.abc123.mongodb.net/mydb&quot;</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="p">);</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">Morphium</span><span class="w"> </span><span class="n">morphium</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Morphium</span><span class="p">(</span><span class="n">cfg</span><span class="p">);</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MorphiumConfig</span><span class="p">();</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">cfg</span><span class="p">.</span><span class="na">clusterSettings</span><span class="p">()</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-00.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-01.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-02.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">   </span><span class="p">.</span><span class="na">setRequiredReplicaSetName</span><span class="p">(</span><span class="s">&quot;atlas-abc123-shard-0&quot;</span><span class="p">);</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="n">cfg</span><span class="p">.</span><span class="na">connectionSettings</span><span class="p">()</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">   </span><span class="p">.</span><span class="na">setDatabase</span><span class="p">(</span><span class="s">&quot;mydb&quot;</span><span class="p">)</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">   </span><span class="p">.</span><span class="na">setUseSSL</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span><span class="w">  </span><span class="c1">// Atlas requires SSL</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">cfg</span><span class="p">.</span><span class="na">authSettings</span><span class="p">()</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoLogin</span><span class="p">(</span><span class="s">&quot;atlasUser&quot;</span><span class="p">)</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoPassword</span><span class="p">(</span><span class="s">&quot;atlasPassword&quot;</span><span class="p">)</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoAuthDb</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">);</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="n">Morphium</span><span class="w"> </span><span class="n">morphium</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Morphium</span><span class="p">(</span><span class="n">cfg</span><span class="p">);</span>
 </span></code></pre></div>
-<p>SSL/TLS is enabled automatically when using <code>mongodb+srv://</code>.</p>
-<h3 id="alternative-manual-host-configuration">Alternative: Manual Host Configuration<a class="headerlink" href="#alternative-manual-host-configuration" title="Permanent link">&para;</a></h3>
-<p>If you prefer explicit configuration or cannot use SRV DNS resolution:</p>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MorphiumConfig</span><span class="p">();</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">cfg</span><span class="p">.</span><span class="na">clusterSettings</span><span class="p">()</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-00.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-01.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">   </span><span class="p">.</span><span class="na">addHostToSeed</span><span class="p">(</span><span class="s">&quot;cluster0-shard-00-02.abc123.mongodb.net&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">27017</span><span class="p">)</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">   </span><span class="p">.</span><span class="na">setRequiredReplicaSetName</span><span class="p">(</span><span class="s">&quot;atlas-abc123-shard-0&quot;</span><span class="p">);</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="n">cfg</span><span class="p">.</span><span class="na">connectionSettings</span><span class="p">()</span>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">   </span><span class="p">.</span><span class="na">setDatabase</span><span class="p">(</span><span class="s">&quot;mydb&quot;</span><span class="p">)</span>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">   </span><span class="p">.</span><span class="na">setUseSSL</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span><span class="w">  </span><span class="c1">// Atlas requires SSL</span>
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">cfg</span><span class="p">.</span><span class="na">authSettings</span><span class="p">()</span>
-</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoLogin</span><span class="p">(</span><span class="s">&quot;atlasUser&quot;</span><span class="p">)</span>
-</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoPassword</span><span class="p">(</span><span class="s">&quot;atlasPassword&quot;</span><span class="p">)</span>
-</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">   </span><span class="p">.</span><span class="na">setMongoAuthDb</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">);</span>
-</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
-</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="n">Morphium</span><span class="w"> </span><span class="n">morphium</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Morphium</span><span class="p">(</span><span class="n">cfg</span><span class="p">);</span>
+<p>Or use a connection URI:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1">// URI parsing handles SSL automatically for mongodb+srv://</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MorphiumConfig</span><span class="p">();</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1">// ... parse from URI or set manually</span>
 </span></code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="certificate-errors">Certificate Errors<a class="headerlink" href="#certificate-errors" title="Permanent link">&para;</a></h3>

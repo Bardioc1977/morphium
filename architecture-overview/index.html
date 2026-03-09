@@ -779,17 +779,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#backend-detection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backend Detection
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#3-object-mapping-system" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2327,17 +2316,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#backend-detection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backend Detection
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#3-object-mapping-system" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2850,8 +2828,8 @@
 </span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>              └─────────────────┬───────────────────┘
 </span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>                                │
 </span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>              ┌─────────────────────────────────────┐
-</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>              │       Backend (auto-detected)      │
-</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>              │  MongoDB │ CosmosDB │ InMemory     │
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>              │            MongoDB                 │
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>              │      (Replica Set / Cluster)       │
 </span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>              └─────────────────────────────────────┘
 </span></code></pre></div>
 <h2 id="core-components">Core Components<a class="headerlink" href="#core-components" title="Permanent link">&para;</a></h2>
@@ -2906,35 +2884,6 @@
 <li><strong>Supports most MongoDB operations</strong> including aggregation</li>
 <li><strong>Perfect for unit testing</strong></li>
 </ul>
-<h3 id="backend-detection">Backend Detection<a class="headerlink" href="#backend-detection" title="Permanent link">&para;</a></h3>
-<p>Morphium automatically detects the connected backend type during the <code>hello</code> handshake. This enables runtime compatibility guards without manual configuration.</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌──────────────────────────────────────────────────────────────────┐
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│                    hello Handshake                               │
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│                                                                  │
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│  ┌────────────┐    hostname check    ┌──────────────────────┐   │
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│  │ Connection │──────────────────────│ CosmosDB Detection   │   │
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│  │ established│    setName check     │ (PooledDriver /      │   │
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│  │            │──────────────────────│  SingleMongoConnect)  │   │
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│  └────────────┘    seed host check   └──────────┬───────────┘   │
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>│                                                  │               │
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>│                                      ┌───────────▼───────────┐  │
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>│                                      │ BackendType enum      │  │
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>│                                      │ MONGODB │ COSMOSDB    │  │
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>│                                      │ MORPHIUM_SERVER       │  │
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>│                                      │ IN_MEMORY             │  │
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>│                                      └───────────┬───────────┘  │
-</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>│                                                  │               │
-</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>│                                      ┌───────────▼───────────┐  │
-</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>│                                      │ Compatibility Guards  │  │
-</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>│                                      │ (Morphium.java)       │  │
-</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>│                                      └───────────────────────┘  │
-</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>└──────────────────────────────────────────────────────────────────┘
-</span></code></pre></div>
-<p>Detection signals for CosmosDB:
-- <strong>Hostname</strong>: <code>*.mongo.cosmos.azure.com</code> or <code>*.mongocluster.cosmos.azure.com</code>
-- <strong>Seed hosts</strong>: Configured hosts matching CosmosDB patterns
-- <strong>Handshake fallback</strong>: <code>setName == "globaldb"</code> + SSL enabled</p>
-<p>See <a href="../cosmosdb-compatibility/">Azure CosmosDB Compatibility</a> for the full feature matrix and guard behavior.</p>
 <h3 id="3-object-mapping-system">3. Object Mapping System<a class="headerlink" href="#3-object-mapping-system" title="Permanent link">&para;</a></h3>
 <h4 id="objectmapperimpl">ObjectMapperImpl<a class="headerlink" href="#objectmapperimpl" title="Permanent link">&para;</a></h4>
 <p><strong>Bidirectional mapping</strong> between Java objects and BSON documents.</p>
@@ -2944,8 +2893,8 @@
 - Reference resolution (lazy and eager)
 - Polymorphism support with class name storage</p>
 <p><strong>Mapping Flow:</strong>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Java Object → ObjectMapper → BSON Document → MongoDB
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>MongoDB → BSON Document → ObjectMapper → Java Object
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Java Object → ObjectMapper → BSON Document → MongoDB
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>MongoDB → BSON Document → ObjectMapper → Java Object
 </span></code></pre></div></p>
 <h4 id="type-mappers">Type Mappers<a class="headerlink" href="#type-mappers" title="Permanent link">&para;</a></h4>
 <p>Specialized mappers for different Java types:
@@ -2957,11 +2906,11 @@
 <h3 id="4-query-system">4. Query System<a class="headerlink" href="#4-query-system" title="Permanent link">&para;</a></h3>
 <h4 id="query-interface">Query Interface<a class="headerlink" href="#query-interface" title="Permanent link">&para;</a></h4>
 <p><strong>Fluent API</strong> for building MongoDB queries:</p>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">Query</span><span class="o">&lt;</span><span class="n">User</span><span class="o">&gt;</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">User</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span><span class="p">.</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;active&quot;</span><span class="p">)</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="p">.</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">).</span><span class="na">gte</span><span class="p">(</span><span class="mi">18</span><span class="p">)</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="p">.</span><span class="na">sort</span><span class="p">(</span><span class="s">&quot;-created&quot;</span><span class="p">)</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">100</span><span class="p">);</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">Query</span><span class="o">&lt;</span><span class="n">User</span><span class="o">&gt;</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">User</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="p">.</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;active&quot;</span><span class="p">)</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="p">.</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">).</span><span class="na">gte</span><span class="p">(</span><span class="mi">18</span><span class="p">)</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="p">.</span><span class="na">sort</span><span class="p">(</span><span class="s">&quot;-created&quot;</span><span class="p">)</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">100</span><span class="p">);</span>
 </span></code></pre></div>
 <h4 id="morphiumiterator">MorphiumIterator<a class="headerlink" href="#morphiumiterator" title="Permanent link">&para;</a></h4>
 <p><strong>Paged iteration</strong> for large result sets:
@@ -2971,10 +2920,10 @@
 - Memory-efficient processing</p>
 <h4 id="aggregation-framework">Aggregation Framework<a class="headerlink" href="#aggregation-framework" title="Permanent link">&para;</a></h4>
 <p><strong>MongoDB aggregation pipeline</strong> support:
-<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">OrderStats</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">OrderStats</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="p">.</span><span class="na">match</span><span class="p">(</span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;completed&quot;</span><span class="p">))</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;customerId&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">avg</span><span class="p">(</span><span class="s">&quot;avgAmount&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">()</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="p">.</span><span class="na">sort</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">);</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">OrderStats</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">OrderStats</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span><span class="p">.</span><span class="na">match</span><span class="p">(</span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;completed&quot;</span><span class="p">))</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;customerId&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">avg</span><span class="p">(</span><span class="s">&quot;avgAmount&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">()</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="p">.</span><span class="na">sort</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">);</span>
 </span></code></pre></div></p>
 <h3 id="5-caching-system">5. Caching System<a class="headerlink" href="#5-caching-system" title="Permanent link">&para;</a></h3>
 <h4 id="multi-level-caching">Multi-Level Caching<a class="headerlink" href="#multi-level-caching" title="Permanent link">&para;</a></h4>
@@ -2989,12 +2938,12 @@
 - <strong>MessagingCacheSynchronizer</strong> - Uses Morphium messaging
 - <strong>Manual cache control</strong> for custom strategies</p>
 <h4 id="cache-strategies">Cache Strategies<a class="headerlink" href="#cache-strategies" title="Permanent link">&para;</a></h4>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nd">@Cache</span><span class="p">(</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60000</span><span class="p">,</span><span class="w">           </span><span class="c1">// 60-second TTL</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="n">maxEntries</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">        </span><span class="c1">// LRU eviction limit</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">ClearStrategy</span><span class="p">.</span><span class="na">LRU</span><span class="p">,</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="n">syncCache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">SyncCacheStrategy</span><span class="p">.</span><span class="na">CLEAR_TYPE_CACHE</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">)</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@Cache</span><span class="p">(</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60000</span><span class="p">,</span><span class="w">           </span><span class="c1">// 60-second TTL</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="n">maxEntries</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">        </span><span class="c1">// LRU eviction limit</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">ClearStrategy</span><span class="p">.</span><span class="na">LRU</span><span class="p">,</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="n">syncCache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">SyncCacheStrategy</span><span class="p">.</span><span class="na">CLEAR_TYPE_CACHE</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="6-messaging-system">6. Messaging System<a class="headerlink" href="#6-messaging-system" title="Permanent link">&para;</a></h3>
 <h4 id="mongodb-based-message-queue">MongoDB-Based Message Queue<a class="headerlink" href="#mongodb-based-message-queue" title="Permanent link">&para;</a></h4>
@@ -3006,9 +2955,9 @@
 - <strong>Message persistence</strong> and durability
 - <strong>Change Stream integration</strong> for real-time processing</p>
 <h4 id="message-processing-flow">Message Processing Flow<a class="headerlink" href="#message-processing-flow" title="Permanent link">&para;</a></h4>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Sender → MongoDB Collection → Change Stream/Polling → Listener
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>                 ↓
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>          Message Persistence
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Sender → MongoDB Collection → Change Stream/Polling → Listener
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>                 ↓
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>          Message Persistence
 </span></code></pre></div>
 <h4 id="implementation-variants">Implementation Variants<a class="headerlink" href="#implementation-variants" title="Permanent link">&para;</a></h4>
 <ul>
@@ -3039,24 +2988,24 @@
 <li>Configurable buffer size and timeout</li>
 <li>Risk of data loss on system failure</li>
 </ol>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nd">@Entity</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nd">@WriteBuffer</span><span class="p">(</span><span class="n">size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5000</span><span class="p">,</span><span class="w"> </span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">             </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WriteBuffer</span><span class="p">.</span><span class="na">STRATEGY</span><span class="p">.</span><span class="na">WRITE_OLD</span><span class="p">)</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LogEntry</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="c1">// High-frequency writes use buffering</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">}</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nd">@Entity</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nd">@WriteBuffer</span><span class="p">(</span><span class="n">size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5000</span><span class="p">,</span><span class="w"> </span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">             </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WriteBuffer</span><span class="p">.</span><span class="na">STRATEGY</span><span class="p">.</span><span class="na">WRITE_OLD</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LogEntry</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="c1">// High-frequency writes use buffering</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="threading-model">Threading Model<a class="headerlink" href="#threading-model" title="Permanent link">&para;</a></h2>
 <h3 id="virtual-threads-jdk-21">Virtual Threads (JDK 21+)<a class="headerlink" href="#virtual-threads-jdk-21" title="Permanent link">&para;</a></h3>
 <p>Morphium leverages <strong>virtual threads</strong> for better concurrency:</p>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1">// Connection pool uses virtual thread factory</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">ScheduledThreadPoolExecutor</span><span class="w"> </span><span class="n">executor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ScheduledThreadPoolExecutor</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="n">Thread</span><span class="p">.</span><span class="na">ofVirtual</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MCon-&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">).</span><span class="na">factory</span><span class="p">());</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1">// Individual operations use virtual threads</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">Thread</span><span class="p">.</span><span class="na">ofVirtual</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;HeartbeatCheck-&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">host</span><span class="p">).</span><span class="na">start</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">    </span><span class="c1">// Heartbeat logic</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">});</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1">// Connection pool uses virtual thread factory</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">ScheduledThreadPoolExecutor</span><span class="w"> </span><span class="n">executor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ScheduledThreadPoolExecutor</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="n">Thread</span><span class="p">.</span><span class="na">ofVirtual</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MCon-&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">).</span><span class="na">factory</span><span class="p">());</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1">// Individual operations use virtual threads</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">Thread</span><span class="p">.</span><span class="na">ofVirtual</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;HeartbeatCheck-&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">host</span><span class="p">).</span><span class="na">start</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="c1">// Heartbeat logic</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="p">});</span>
 </span></code></pre></div>
 <h3 id="concurrency-patterns">Concurrency Patterns<a class="headerlink" href="#concurrency-patterns" title="Permanent link">&para;</a></h3>
 <ol>
@@ -3083,16 +3032,16 @@
 </ol>
 <h2 id="configuration-architecture">Configuration Architecture<a class="headerlink" href="#configuration-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="modular-configuration-system">Modular Configuration System<a class="headerlink" href="#modular-configuration-system" title="Permanent link">&para;</a></h3>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="n">ConnectionSettings</span><span class="w"> </span><span class="n">connectionSettings</span><span class="p">;</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="n">ClusterSettings</span><span class="w"> </span><span class="n">clusterSettings</span><span class="p">;</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="n">DriverSettings</span><span class="w"> </span><span class="n">driverSettings</span><span class="p">;</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="n">MessagingSettings</span><span class="w"> </span><span class="n">messagingSettings</span><span class="p">;</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="n">CacheSettings</span><span class="w"> </span><span class="n">cacheSettings</span><span class="p">;</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="n">ThreadPoolSettings</span><span class="w"> </span><span class="n">threadPoolSettings</span><span class="p">;</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="n">WriterSettings</span><span class="w"> </span><span class="n">writerSettings</span><span class="p">;</span>
-</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="c1">// ... other settings</span>
-</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="p">}</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">MorphiumConfig</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="n">ConnectionSettings</span><span class="w"> </span><span class="n">connectionSettings</span><span class="p">;</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="n">ClusterSettings</span><span class="w"> </span><span class="n">clusterSettings</span><span class="p">;</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span><span class="n">DriverSettings</span><span class="w"> </span><span class="n">driverSettings</span><span class="p">;</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="n">MessagingSettings</span><span class="w"> </span><span class="n">messagingSettings</span><span class="p">;</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span><span class="n">CacheSettings</span><span class="w"> </span><span class="n">cacheSettings</span><span class="p">;</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">    </span><span class="n">ThreadPoolSettings</span><span class="w"> </span><span class="n">threadPoolSettings</span><span class="p">;</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="n">WriterSettings</span><span class="w"> </span><span class="n">writerSettings</span><span class="p">;</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="c1">// ... other settings</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="p">}</span>
 </span></code></pre></div>
 <h3 id="configuration-sources">Configuration Sources<a class="headerlink" href="#configuration-sources" title="Permanent link">&para;</a></h3>
 <ol>
@@ -3113,22 +3062,22 @@
 <li><strong>Lifecycle Listeners</strong> - Storage event hooks</li>
 </ol>
 <h3 id="example-extension">Example Extension<a class="headerlink" href="#example-extension" title="Permanent link">&para;</a></h3>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1">// Custom name provider for time-based collections</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">TimeBasedNameProvider</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">NameProvider</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="nd">@Override</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getCollectionName</span><span class="p">(</span><span class="n">Class</span><span class="o">&lt;?&gt;</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="w"> </span><span class="n">om</span><span class="p">,</span><span class="w"> </span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">                                   </span><span class="kt">boolean</span><span class="w"> </span><span class="n">translateCamelCase</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">useFQN</span><span class="p">,</span><span class="w"> </span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">                                   </span><span class="n">String</span><span class="w"> </span><span class="n">specifiedName</span><span class="p">,</span><span class="w"> </span><span class="n">Morphium</span><span class="w"> </span><span class="n">morphium</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">        </span><span class="n">SimpleDateFormat</span><span class="w"> </span><span class="n">df</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SimpleDateFormat</span><span class="p">(</span><span class="s">&quot;yyyyMM&quot;</span><span class="p">);</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">date</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">df</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Date</span><span class="p">());</span>
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">specifiedName</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">date</span><span class="p">;</span>
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="p">}</span>
-</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>
-</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="nd">@Entity</span><span class="p">(</span><span class="n">nameProvider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TimeBasedNameProvider</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LogEntry</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">    </span><span class="c1">// Will be stored in collections like &quot;log_entry_202412&quot;</span>
-</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="p">}</span>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1">// Custom name provider for time-based collections</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">TimeBasedNameProvider</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">NameProvider</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="nd">@Override</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getCollectionName</span><span class="p">(</span><span class="n">Class</span><span class="o">&lt;?&gt;</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="w"> </span><span class="n">om</span><span class="p">,</span><span class="w"> </span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">                                   </span><span class="kt">boolean</span><span class="w"> </span><span class="n">translateCamelCase</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">useFQN</span><span class="p">,</span><span class="w"> </span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">                                   </span><span class="n">String</span><span class="w"> </span><span class="n">specifiedName</span><span class="p">,</span><span class="w"> </span><span class="n">Morphium</span><span class="w"> </span><span class="n">morphium</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">        </span><span class="n">SimpleDateFormat</span><span class="w"> </span><span class="n">df</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SimpleDateFormat</span><span class="p">(</span><span class="s">&quot;yyyyMM&quot;</span><span class="p">);</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">date</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">df</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Date</span><span class="p">());</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">specifiedName</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">date</span><span class="p">;</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">}</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="nd">@Entity</span><span class="p">(</span><span class="n">nameProvider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TimeBasedNameProvider</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LogEntry</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">    </span><span class="c1">// Will be stored in collections like &quot;log_entry_202412&quot;</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="performance-architecture">Performance Architecture<a class="headerlink" href="#performance-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="key-performance-features">Key Performance Features<a class="headerlink" href="#key-performance-features" title="Permanent link">&para;</a></h3>

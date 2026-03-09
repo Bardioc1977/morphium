@@ -1861,25 +1861,28 @@
 </span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1">// First access triggers the actual DB query:</span>
 </span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">post</span><span class="p">.</span><span class="na">getAuthor</span><span class="p">().</span><span class="na">getName</span><span class="p">();</span><span class="w"> </span><span class="c1">// DB query happens here</span>
 </span></code></pre></div>
-<p><strong>Important for bidirectional references:</strong> If entity A references B and B references A, you must use <code>lazyLoading = true</code> on at least one side to prevent infinite deserialization loops.</p>
+<p><strong>Bidirectional references:</strong> If entity A references B and B references A, Morphium automatically detects the cycle during deserialization and breaks it by substituting a lazy proxy for the back-reference. This works transparently even without <code>lazyLoading = true</code> — no <code>StackOverflowError</code> will occur. For best performance you can still set <code>lazyLoading = true</code> on one side to avoid the extra DB round-trip.</p>
 <h2 id="cascadedelete-default-false">cascadeDelete (default: false)<a class="headerlink" href="#cascadedelete-default-false" title="Permanent link">&para;</a></h2>
-<p>When <code>cascadeDelete = true</code>, deleting the parent entity also deletes the referenced entities:</p>
+<p>When <code>cascadeDelete = true</code>, deleting the parent entity also deletes the referenced entities.</p>
+<p><strong>Important:</strong> The entity class must be annotated with <code>@CascadeAware</code> for cascade operations to take effect. Without this marker, <code>cascadeDelete</code> and <code>orphanRemoval</code> checks are skipped entirely for performance (analogous to <code>@Lifecycle</code> for lifecycle callbacks).</p>
 <div class="language-java highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@Entity</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Order</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nd">@Id</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">cascadeDelete</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">OrderItem</span><span class="o">&gt;</span><span class="w"> </span><span class="n">items</span><span class="p">;</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nd">@Reference</span><span class="w">  </span><span class="c1">// default: cascadeDelete = false</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Customer</span><span class="w"> </span><span class="n">customer</span><span class="p">;</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1">// Deleting the order also deletes all items, but keeps the customer</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">morphium</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">order</span><span class="p">);</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nd">@CascadeAware</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Order</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nd">@Id</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">cascadeDelete</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">OrderItem</span><span class="o">&gt;</span><span class="w"> </span><span class="n">items</span><span class="p">;</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nd">@Reference</span><span class="w">  </span><span class="c1">// default: cascadeDelete = false</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Customer</span><span class="w"> </span><span class="n">customer</span><span class="p">;</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="p">}</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1">// Deleting the order also deletes all items, but keeps the customer</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">morphium</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">order</span><span class="p">);</span>
 </span></code></pre></div>
 <p><strong>Key behaviors:</strong>
+- <strong>Requires <code>@CascadeAware</code></strong> on the entity class — without it, cascade operations are silently skipped
 - Only applies to entity-based <code>remove(Object)</code> / <code>delete(Object)</code> calls, not query-based deletes
 - Cascade delete is recursive: if OrderItem also has <code>@Reference(cascadeDelete = true)</code>, those references are deleted too
 - <strong>Cycle-safe:</strong> Circular cascade references (A→B→A) are detected and won't cause infinite loops
@@ -1887,18 +1890,19 @@
 <h2 id="orphanremoval-default-false">orphanRemoval (default: false)<a class="headerlink" href="#orphanremoval-default-false" title="Permanent link">&para;</a></h2>
 <p>When <code>orphanRemoval = true</code>, updating a parent entity will automatically delete referenced objects that are no longer referenced:</p>
 <div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@Entity</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Team</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nd">@Id</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">orphanRemoval</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Player</span><span class="o">&gt;</span><span class="w"> </span><span class="n">roster</span><span class="p">;</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="p">}</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1">// Initial state: team references players A, B, C</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="n">team</span><span class="p">.</span><span class="na">getRoster</span><span class="p">().</span><span class="na">remove</span><span class="p">(</span><span class="n">playerB</span><span class="p">);</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">morphium</span><span class="p">.</span><span class="na">store</span><span class="p">(</span><span class="n">team</span><span class="p">);</span>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1">// playerB is automatically deleted from the database (orphan removed)</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nd">@CascadeAware</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Team</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nd">@Id</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">orphanRemoval</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Player</span><span class="o">&gt;</span><span class="w"> </span><span class="n">roster</span><span class="p">;</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">}</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1">// Initial state: team references players A, B, C</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">team</span><span class="p">.</span><span class="na">getRoster</span><span class="p">().</span><span class="na">remove</span><span class="p">(</span><span class="n">playerB</span><span class="p">);</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">morphium</span><span class="p">.</span><span class="na">store</span><span class="p">(</span><span class="n">team</span><span class="p">);</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1">// playerB is automatically deleted from the database (orphan removed)</span>
 </span></code></pre></div>
 <p><strong>Key behaviors:</strong>
 - Only triggers on <strong>updates</strong> (entities with an existing ID), not inserts
@@ -1956,9 +1960,10 @@
 </span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="n">morphium</span><span class="p">.</span><span class="na">store</span><span class="p">(</span><span class="n">a</span><span class="p">);</span>
 </span></code></pre></div>
 <p><strong>Best practices for bidirectional references:</strong>
-1. Use <code>lazyLoading = true</code> on at least one side to prevent deserialization cycles
-2. Use <code>automaticStore = false</code> on one side and store that entity first
-3. Both approaches can be combined:</p>
+1. Cycle detection is automatic — bidirectional references work out of the box
+2. For performance, consider <code>lazyLoading = true</code> on one side to skip a DB round-trip
+3. Use <code>automaticStore = false</code> on one side and store that entity first
+4. These approaches can be combined:</p>
 <div class="language-java highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nd">@Entity</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Parent</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nd">@Reference</span>

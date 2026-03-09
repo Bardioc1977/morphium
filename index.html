@@ -552,17 +552,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cloud-compatibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cloud &amp; Compatibility
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1842,17 +1831,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cloud-compatibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cloud &amp; Compatibility
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1938,7 +1916,7 @@
   - Perfect for CI/CD pipelines, integration testing, and microservices development
   - Any MongoDB client (Java, Python, Node.js, Go, etc.) can connect to it
   - Supports <strong>Replica Sets</strong> (experimental) and <strong>Persistence (Snapshots)</strong>
-  - Run with: <code>java -jar target/morphium-6.2.0-SNAPSHOT-server-cli.jar --port 27017</code></p>
+  - Run with: <code>java -jar target/morphium-6.1.1-server-cli.jar --port 27017</code></p>
 <h2 id="production-deployment">Production Deployment<a class="headerlink" href="#production-deployment" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="production-deployment-guide/">Production Deployment Guide</a></strong> - Complete guide for deploying Morphium in production environments</li>
@@ -1951,10 +1929,6 @@
 <li><strong><a href="monitoring-metrics-guide/">Monitoring &amp; Metrics Guide</a></strong> - Comprehensive monitoring with DriverStats and performance metrics</li>
 <li><strong><a href="troubleshooting-guide/">Troubleshooting Guide</a></strong> - Common issues, diagnosis, and solutions</li>
 <li><strong><a href="architecture-overview/">Architecture Overview</a></strong> - Internal architecture and component relationships</li>
-</ul>
-<h2 id="cloud-compatibility">Cloud &amp; Compatibility<a class="headerlink" href="#cloud-compatibility" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong><a href="cosmosdb-compatibility/">Azure CosmosDB Compatibility</a></strong> - Automatic CosmosDB detection, compatibility guards, and feature matrix</li>
 </ul>
 <h2 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1980,9 +1954,8 @@
 - Full control over retry/failover semantics and performance trade‑offs.
 - SSL/TLS support for secure connections (since v6.0).</p>
 <p>Limitations
-- Some advanced features of the official driver are not available.
-- MongoDB Atlas is supported since v6.0 via SSL/TLS (see <a href="ssl-tls/">SSL/TLS Connections</a>).
-- Azure CosmosDB is supported with automatic detection and compatibility guards (see <a href="cosmosdb-compatibility/">CosmosDB Compatibility</a>).</p>
+- No MongoDB Atlas support.
+- Some advanced features of the official driver are not available.</p>
 
 
 
