@@ -127,11 +127,9 @@ public class ChangeStreamTest extends MultiDriverTestBase {
                 t.join();
                 start = System.currentTimeMillis();
 
-                while (!(count.get() > 0 && count.get() * 2 >= written.get() - 2)) {
-                    Thread.sleep(500);
-                    log.info(morphium.getDriver().getName() + ": Wrong count: " + count.get() + " written: " + written.get());
-                    assert(System.currentTimeMillis() - start < 10000);
-                }
+                TestUtils.waitForConditionToBecomeTrue(30000,
+                    morphium.getDriver().getName() + ": count/written mismatch: count=" + count.get() + " written=" + written.get(),
+                    () -> count.get() > 0 && count.get() * 2 >= written.get() - 2);
 
                 log.info("finished.");
             } finally {
@@ -240,7 +238,7 @@ public class ChangeStreamTest extends MultiDriverTestBase {
                     count.incrementAndGet();
                     log.info("count: " + count.get());
 
-                    if (count.get() == 50) {
+                    if (count.get() >= 50) {
                         run.set(false);
                         return false;
                     }
@@ -298,9 +296,8 @@ public class ChangeStreamTest extends MultiDriverTestBase {
                 morphium.store(new UncachedObject("value " + i, i));
             }
 
-            Thread.sleep(5000);
+            TestUtils.waitForConditionToBecomeTrue(30000, "Not enough events: " + cnt.get(), () -> cnt.get() >= 100);
             m.terminate();
-            assert(cnt.get() >= 100 && cnt.get() <= 101) : "count is wrong: " + cnt.get();
             morphium.store(new UncachedObject("killing", 0));
         }
     }

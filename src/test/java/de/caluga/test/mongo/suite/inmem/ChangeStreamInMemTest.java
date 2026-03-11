@@ -196,7 +196,7 @@ public class ChangeStreamInMemTest extends MorphiumInMemTestBase {
             printevent(evt);
             count.incrementAndGet();
             log.info("count: " + count.get());
-            if (count.get() == 50) {
+            if (count.get() >= 50) {
                 run.set(false);
                 return false;
             }
