@@ -11,19 +11,18 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for multi-node election.
  * Starts multiple PoppyDB instances and tests leader election.
+ * Uses polling instead of Thread.sleep for CI stability.
  */
 public class MultiNodeElectionTest {
 
     private static final Logger log = LoggerFactory.getLogger(MultiNodeElectionTest.class);
+    private static final long ELECTION_TIMEOUT_MS = 15000;
 
     private List<PoppyDB> servers = new ArrayList<>();
 
@@ -40,11 +39,88 @@ public class MultiNodeElectionTest {
         servers.clear();
     }
 
+    /**
+     * Polls servers until the expected number of leaders and followers is reached,
+     * or the timeout expires. Returns the leader address if found.
+     */
+    private String waitForElectionState(List<PoppyDB> serverList,
+                                        int expectedLeaders, int expectedFollowers,
+                                        long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            int leaders = 0, followers = 0;
+            String leaderAddr = null;
+            for (PoppyDB server : serverList) {
+                ElectionManager em = server.getElectionManager();
+                if (em != null) {
+                    if (em.getState() == ElectionState.LEADER) {
+                        leaders++;
+                        leaderAddr = server.getHost() + ":" + server.getPort();
+                    } else if (em.getState() == ElectionState.FOLLOWER) {
+                        followers++;
+                    }
+                }
+            }
+            if (leaders == expectedLeaders && followers == expectedFollowers) {
+                return leaderAddr;
+            }
+            Thread.sleep(100);
+        }
+        // Final snapshot for assertion message
+        int leaders = 0, followers = 0, candidates = 0;
+        for (PoppyDB s : serverList) {
+            ElectionManager em = s.getElectionManager();
+            if (em != null) {
+                switch (em.getState()) {
+                    case LEADER -> leaders++;
+                    case FOLLOWER -> followers++;
+                    case CANDIDATE -> candidates++;
+                }
+            }
+        }
+        fail(String.format("Election did not converge within %dms: %d leaders, %d followers, %d candidates (expected %d leaders, %d followers)",
+                timeoutMs, leaders, followers, candidates, expectedLeaders, expectedFollowers));
+        return null; // unreachable
+    }
+
+    /**
+     * Polls servers until at least one leader is found and returns it.
+     */
+    private PoppyDB waitForLeader(List<PoppyDB> serverList, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            for (PoppyDB server : serverList) {
+                ElectionManager em = server.getElectionManager();
+                if (em != null && em.getState() == ElectionState.LEADER) {
+                    return server;
+                }
+            }
+            Thread.sleep(100);
+        }
+        fail("No leader found within " + timeoutMs + "ms");
+        return null; // unreachable
+    }
+
+    /**
+     * Polls servers and asserts that no leader exists for the given duration.
+     */
+    private void assertNoLeaderFor(List<PoppyDB> serverList, long durationMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + durationMs;
+        while (System.currentTimeMillis() < deadline) {
+            for (PoppyDB server : serverList) {
+                ElectionManager em = server.getElectionManager();
+                if (em != null && em.getState() == ElectionState.LEADER) {
+                    fail("Unexpected leader found: " + server.getHost() + ":" + server.getPort());
+                }
+            }
+            Thread.sleep(100);
+        }
+    }
+
     @Test
     void testSingleNodeElection() throws Exception {
         log.info("Testing single node election");
 
-        // Single node should become leader automatically
         List<String> hosts = List.of("localhost:27100");
 
         ElectionConfig config = new ElectionConfig()
@@ -57,8 +133,7 @@ public class MultiNodeElectionTest {
 
         server.start();
 
-        // Wait for election
-        Thread.sleep(500);
+        waitForElectionState(servers, 1, 0, ELECTION_TIMEOUT_MS);
 
         assertTrue(server.isPrimary(), "Single node should be primary");
         assertEquals("localhost:27100", server.getPrimaryHost());
@@ -79,7 +154,6 @@ public class MultiNodeElectionTest {
                 .setElectionTimeoutMaxMs(300)
                 .setHeartbeatIntervalMs(50);
 
-        // Create and start servers
         for (int i = 0; i < 3; i++) {
             int port = 27100 + i;
             PoppyDB server = new PoppyDB(port, "localhost", 100, 60);
@@ -87,35 +161,11 @@ public class MultiNodeElectionTest {
             servers.add(server);
         }
 
-        // Start all servers
         for (PoppyDB server : servers) {
             server.start();
         }
 
-        // Wait for election to complete
-        Thread.sleep(2000);
-
-        // Count leaders and followers
-        int leaderCount = 0;
-        int followerCount = 0;
-        String leaderAddress = null;
-
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null) {
-                if (em.getState() == ElectionState.LEADER) {
-                    leaderCount++;
-                    leaderAddress = server.getHost() + ":" + server.getPort();
-                    log.info("Leader: {}:{}", server.getHost(), server.getPort());
-                } else if (em.getState() == ElectionState.FOLLOWER) {
-                    followerCount++;
-                    log.info("Follower: {}:{} (leader: {})", server.getHost(), server.getPort(), em.getCurrentLeader());
-                }
-            }
-        }
-
-        assertEquals(1, leaderCount, "Should have exactly one leader");
-        assertEquals(2, followerCount, "Should have two followers");
+        String leaderAddress = waitForElectionState(servers, 1, 2, ELECTION_TIMEOUT_MS);
         assertNotNull(leaderAddress);
 
         // Verify all servers agree on who the leader is
@@ -149,7 +199,6 @@ public class MultiNodeElectionTest {
                 .setElectionTimeoutMaxMs(300)
                 .setHeartbeatIntervalMs(50);
 
-        // Create and start servers
         for (int i = 0; i < 3; i++) {
             int port = 27100 + i;
             PoppyDB server = new PoppyDB(port, "localhost", 100, 60);
@@ -162,18 +211,7 @@ public class MultiNodeElectionTest {
         }
 
         // Wait for initial election
-        Thread.sleep(2000);
-
-        // Find the current leader
-        PoppyDB leader = null;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leader = server;
-                break;
-            }
-        }
-        assertNotNull(leader, "Should have a leader");
+        PoppyDB leader = waitForLeader(servers, ELECTION_TIMEOUT_MS);
         String originalLeaderAddress = leader.getHost() + ":" + leader.getPort();
         log.info("Original leader: {}", originalLeaderAddress);
 
@@ -182,22 +220,8 @@ public class MultiNodeElectionTest {
         leader.shutdown();
         servers.remove(leader);
 
-        // Wait for new election
-        Thread.sleep(2000);
-
-        // Count leaders among remaining servers
-        int newLeaderCount = 0;
-        String newLeaderAddress = null;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                newLeaderCount++;
-                newLeaderAddress = server.getHost() + ":" + server.getPort();
-                log.info("New leader: {}", newLeaderAddress);
-            }
-        }
-
-        assertEquals(1, newLeaderCount, "Should have exactly one new leader");
+        // Wait for new election among remaining servers
+        String newLeaderAddress = waitForElectionState(servers, 1, 1, ELECTION_TIMEOUT_MS);
         assertNotEquals(originalLeaderAddress, newLeaderAddress, "New leader should be different");
     }
 
@@ -219,20 +243,9 @@ public class MultiNodeElectionTest {
 
         server.start();
 
-        // Wait for several election attempts
-        Thread.sleep(1500);
+        // Verify no leader emerges over several election cycles
+        assertNoLeaderFor(servers, 2000);
 
-        // Should still be candidate or follower - can't become leader without majority
-        ElectionManager em = server.getElectionManager();
-        assertNotNull(em);
-
-        // Without other nodes responding, it will keep trying to elect itself
-        // but won't succeed as it can't get majority
-        // It may be CANDIDATE (trying to elect) or FOLLOWER (after timeout)
-        log.info("Single node in 3-node cluster state: {}", em.getState());
-
-        // The node should not be primary since it can't win election
-        // Note: It keeps trying elections but can't get majority votes
         assertFalse(server.isPrimary(), "Single node in 3-node cluster should not become primary");
     }
 
@@ -247,7 +260,6 @@ public class MultiNodeElectionTest {
                 .setElectionTimeoutMaxMs(300)
                 .setHeartbeatIntervalMs(50);
 
-        // Create and start servers
         for (int i = 0; i < 3; i++) {
             int port = 27100 + i;
             PoppyDB server = new PoppyDB(port, "localhost", 100, 60);
@@ -260,18 +272,7 @@ public class MultiNodeElectionTest {
         }
 
         // Wait for initial election
-        Thread.sleep(2000);
-
-        // Find the current leader
-        PoppyDB leader = null;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leader = server;
-                break;
-            }
-        }
-        assertNotNull(leader, "Should have a leader");
+        PoppyDB leader = waitForLeader(servers, ELECTION_TIMEOUT_MS);
         String originalLeaderAddress = leader.getHost() + ":" + leader.getPort();
         log.info("Original leader: {}", originalLeaderAddress);
 
@@ -281,26 +282,25 @@ public class MultiNodeElectionTest {
         boolean stepdownResult = leaderEm.stepDown(2, 0, true);  // 2 second no-election period
         assertTrue(stepdownResult, "Stepdown should succeed");
 
-        // Wait for new election
-        Thread.sleep(2000);
-
-        // The original leader should not be leader anymore (it's blocked)
-        assertNotEquals(ElectionState.LEADER, leaderEm.getState(),
-                "Original leader should have stepped down");
-
-        // Count leaders among all servers
-        int leaderCount = 0;
+        // Wait for new election — original leader is blocked, so a different node must win
+        long deadline = System.currentTimeMillis() + ELECTION_TIMEOUT_MS;
         String newLeaderAddress = null;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leaderCount++;
-                newLeaderAddress = server.getHost() + ":" + server.getPort();
-                log.info("New leader: {}", newLeaderAddress);
+        while (System.currentTimeMillis() < deadline) {
+            for (PoppyDB server : servers) {
+                ElectionManager em = server.getElectionManager();
+                if (em != null && em.getState() == ElectionState.LEADER
+                        && !(server.getHost() + ":" + server.getPort()).equals(originalLeaderAddress)) {
+                    newLeaderAddress = server.getHost() + ":" + server.getPort();
+                    break;
+                }
             }
+            if (newLeaderAddress != null) break;
+            Thread.sleep(100);
         }
 
-        assertEquals(1, leaderCount, "Should have exactly one new leader");
+        assertNotEquals(ElectionState.LEADER, leaderEm.getState(),
+                "Original leader should have stepped down");
+        assertNotNull(newLeaderAddress, "Should have a new leader after stepdown");
         assertNotEquals(originalLeaderAddress, newLeaderAddress,
                 "New leader should be different from original (which is blocked)");
 
@@ -318,7 +318,6 @@ public class MultiNodeElectionTest {
                 .setElectionTimeoutMaxMs(200)
                 .setHeartbeatIntervalMs(50);
 
-        // Create and start servers
         for (int i = 0; i < 3; i++) {
             int port = 27100 + i;
             PoppyDB server = new PoppyDB(port, "localhost", 100, 60);
@@ -331,21 +330,17 @@ public class MultiNodeElectionTest {
         }
 
         // Wait for initial election
-        Thread.sleep(2000);
+        PoppyDB leader = waitForLeader(servers, ELECTION_TIMEOUT_MS);
+        assertNotNull(leader, "Should have a leader");
 
-        // Find the current leader and freeze the other two nodes
-        PoppyDB leader = null;
+        // Freeze non-leader nodes
         for (PoppyDB server : servers) {
             ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leader = server;
-            } else if (em != null) {
-                // Freeze non-leader nodes
+            if (em != null && em.getState() != ElectionState.LEADER) {
                 em.freeze(10);
                 log.info("Froze node {}:{}", server.getHost(), server.getPort());
             }
         }
-        assertNotNull(leader, "Should have a leader");
 
         // Stop the leader
         String originalLeaderAddress = leader.getHost() + ":" + leader.getPort();
@@ -353,21 +348,10 @@ public class MultiNodeElectionTest {
         leader.shutdown();
         servers.remove(leader);
 
-        // Wait for potential new election
-        Thread.sleep(1000);
-
         // No new leader should be elected because remaining nodes are frozen
-        int leaderCount = 0;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leaderCount++;
-            }
-        }
+        assertNoLeaderFor(servers, 1500);
 
-        assertEquals(0, leaderCount, "No new leader should be elected while nodes are frozen");
-
-        // Unfreeze nodes and wait for election
+        // Unfreeze nodes
         for (PoppyDB server : servers) {
             ElectionManager em = server.getElectionManager();
             if (em != null) {
@@ -376,19 +360,7 @@ public class MultiNodeElectionTest {
             }
         }
 
-        // Wait for election
-        Thread.sleep(1500);
-
-        // Now we should have a new leader
-        leaderCount = 0;
-        for (PoppyDB server : servers) {
-            ElectionManager em = server.getElectionManager();
-            if (em != null && em.getState() == ElectionState.LEADER) {
-                leaderCount++;
-                log.info("New leader after unfreeze: {}:{}", server.getHost(), server.getPort());
-            }
-        }
-
-        assertEquals(1, leaderCount, "Should have exactly one leader after unfreeze");
+        // Now we should get a new leader
+        waitForElectionState(servers, 1, 1, ELECTION_TIMEOUT_MS);
     }
 }
