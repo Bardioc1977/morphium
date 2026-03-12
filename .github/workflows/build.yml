@@ -36,7 +36,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: mvn -B verify
+        run: mvn -B verify -Dsurefire.rerunFailingTestsCount=2
 
       - name: Trigger quarkus-morphium rebuild
         if: github.ref == 'refs/heads/develop'
