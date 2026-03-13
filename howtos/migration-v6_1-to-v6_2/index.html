@@ -12,13 +12,13 @@
         <meta name="author" content="Morphium Development Team">
       
       
-        <link rel="canonical" href="https://sboesebeck.github.io/morphium/howtos/cache-patterns/">
+        <link rel="canonical" href="https://sboesebeck.github.io/morphium/howtos/migration-v6_1-to-v6_2/">
       
       
-        <link rel="prev" href="../caching-examples/">
+        <link rel="prev" href="../inmemory-driver/">
       
       
-        <link rel="next" href="../field-names/">
+        <link rel="next" href="../migration-v5-to-v6/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Cache Patterns - Morphium Documentation</title>
+        <title>Upgrade v6.1→v6.2 - Morphium Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#cache-patterns" class="md-skip">
+        <a href="#migration-v61x-v620" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Cache Patterns
+              Upgrade v6.1→v6.2
             
           </span>
         </div>
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../migration-v6_1-to-v6_2/" class="md-tabs__link">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -920,10 +920,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../migration-v6_1-to-v6_2/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade v6.1→v6.2
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -939,6 +966,200 @@
   
 
       </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-morphiumdriverexception-is-now-unchecked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. MorphiumDriverException is now unchecked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-morphiumserver-poppydb-module-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. MorphiumServer → PoppyDB (Module Extraction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-multi-module-maven-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Multi-Module Maven Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#config-setters-moved-to-sub-objects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config setters moved to sub-objects
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reference-cascade-deletestore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @Reference Cascade Delete/Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#autosequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @AutoSequence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#creationtime-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @CreationTime Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cosmosdb-auto-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CosmosDB Auto-Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#poppydb-morphium-messaging-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PoppyDB &amp; Morphium Messaging Optimization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependency-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency Updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1032,19 +1253,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../cache-patterns/" class="md-nav__link">
         
   
   
@@ -1060,7 +1272,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -1669,6 +1880,186 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-morphiumdriverexception-is-now-unchecked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. MorphiumDriverException is now unchecked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-morphiumserver-poppydb-module-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. MorphiumServer → PoppyDB (Module Extraction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-multi-module-maven-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Multi-Module Maven Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#config-setters-moved-to-sub-objects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config setters moved to sub-objects
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reference-cascade-deletestore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @Reference Cascade Delete/Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#autosequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @AutoSequence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#creationtime-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @CreationTime Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cosmosdb-auto-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CosmosDB Auto-Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#poppydb-morphium-messaging-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PoppyDB &amp; Morphium Messaging Optimization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependency-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency Updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1687,77 +2078,200 @@
   
 
 
-<h1 id="cache-patterns">Cache Patterns<a class="headerlink" href="#cache-patterns" title="Permanent link">&para;</a></h1>
-<p>This page outlines common caching patterns with Morphium and when to use them.</p>
-<p>1) Read‑through entity cache (default)
-- Use <code>@Cache</code> on entities to enable read cache for queries and ID cache
-- Choose a clear strategy that matches your write rate and consistency needs
-<div class="language-java highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nd">@Cache</span><span class="p">(</span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30_000</span><span class="p">,</span><span class="w"> </span><span class="n">clearOnWrite</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">ClearStrategy</span><span class="p">.</span><span class="na">LRU</span><span class="p">,</span><span class="w"> </span><span class="n">syncCache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">SyncCacheStrategy</span><span class="p">.</span><span class="na">CLEAR_TYPE_CACHE</span><span class="p">)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Product</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+<h1 id="migration-v61x-v620">Migration v6.1.x → v6.2.0<a class="headerlink" href="#migration-v61x-v620" title="Permanent link">&para;</a></h1>
+<p>This guide covers all breaking changes and new features when upgrading from Morphium 6.1.x to 6.2.0.</p>
+<h2 id="breaking-changes">Breaking Changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h2>
+<h3 id="1-morphiumdriverexception-is-now-unchecked">1. MorphiumDriverException is now unchecked<a class="headerlink" href="#1-morphiumdriverexception-is-now-unchecked" title="Permanent link">&para;</a></h3>
+<p><code>MorphiumDriverException</code> extends <code>RuntimeException</code> instead of <code>Exception</code>. This aligns with the MongoDB Java Driver (<code>MongoException</code>), Spring Data, JPA, and jOOQ conventions. It eliminates 40+ boilerplate <code>catch-wrap-rethrow</code> blocks throughout Morphium.</p>
+<p><strong>What to change:</strong></p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1">// Multi-catch: simplify (MorphiumDriverException IS a RuntimeException now)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">// Before:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="n">morphium</span><span class="p">.</span><span class="na">store</span><span class="p">(</span><span class="n">entity</span><span class="p">);</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">RuntimeException</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">MorphiumDriverException</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="n">handleError</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">}</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1">// After:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="n">morphium</span><span class="p">.</span><span class="na">store</span><span class="p">(</span><span class="n">entity</span><span class="p">);</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">RuntimeException</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="n">handleError</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">}</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1">// throws declarations: can be removed (still compile if left in)</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1">// Before:</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">doStuff</span><span class="p">()</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">MorphiumDriverException</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1">// After:</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">doStuff</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="c1">// Standalone catch: works unchanged</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">MorphiumDriverException</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span><span class="w">  </span><span class="c1">// still valid</span>
 </span></code></pre></div>
-When to use
-- Most read‑heavy entities, where occasional stale reads for up to the TTL are acceptable</p>
-<p>2) Precise invalidation per entity (remove or update)
-- Reduce blast radius on writes by removing/updating only affected IDs instead of clearing the whole type cache
-<div class="language-java highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nd">@Cache</span><span class="p">(</span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60_000</span><span class="p">,</span><span class="w"> </span><span class="n">clearOnWrite</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">syncCache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">SyncCacheStrategy</span><span class="p">.</span><span class="na">REMOVE_ENTRY_FROM_TYPE_CACHE</span><span class="p">)</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">User</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
-</span></code></pre></div>
-or
-<div class="language-java highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nd">@Cache</span><span class="p">(</span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60_000</span><span class="p">,</span><span class="w"> </span><span class="n">clearOnWrite</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">syncCache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">SyncCacheStrategy</span><span class="p">.</span><span class="na">UPDATE_ENTRY</span><span class="p">)</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">User</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
-</span></code></pre></div>
-Notes
-- With <code>UPDATE_ENTRY</code>, other nodes re‑read the updated document (slightly higher cost, but fewer cache misses)</p>
-<p>3) Cluster‑wide synchronization via messaging
-- Ensure every node runs messaging and attach a <code>MessagingCacheSynchronizer</code>
-<div class="language-java highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">MorphiumMessaging</span><span class="w"> </span><span class="n">messaging</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createMessaging</span><span class="p">();</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">messaging</span><span class="p">.</span><span class="na">start</span><span class="p">();</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">new</span><span class="w"> </span><span class="n">MessagingCacheSynchronizer</span><span class="p">(</span><span class="n">messaging</span><span class="p">,</span><span class="w"> </span><span class="n">morphium</span><span class="p">);</span>
-</span></code></pre></div>
-When to use
-- Multi‑node deployments that need consistent caches after writes</p>
-<p>4) TTL tuning and hot‑set sizing
-- Keep <code>@Cache.timeout</code> small enough to minimize staleness, large enough to reduce DB load
-- Use <code>maxEntries</code> and <code>strategy</code> to control memory use and eviction behavior
-<div class="language-java highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@Cache</span><span class="p">(</span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">15_000</span><span class="p">,</span><span class="w"> </span><span class="n">maxEntries</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50_000</span><span class="p">,</span><span class="w"> </span><span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cache</span><span class="p">.</span><span class="na">ClearStrategy</span><span class="p">.</span><span class="na">LRU</span><span class="p">)</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Article</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span>
+<p><strong>Important:</strong> If your code catches <code>Exception</code> broadly, <code>MorphiumDriverException</code> is now caught by <code>catch (RuntimeException e)</code> as well. Review your exception handling hierarchy.</p>
+<h3 id="2-morphiumserver-poppydb-module-extraction">2. MorphiumServer → PoppyDB (Module Extraction)<a class="headerlink" href="#2-morphiumserver-poppydb-module-extraction" title="Permanent link">&para;</a></h3>
+<p>The embedded MongoDB-compatible server was extracted into a separate Maven module and renamed.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>6.1.x</th>
+<th>6.2.0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Maven artifact</td>
+<td>bundled in <code>de.caluga:morphium</code></td>
+<td>separate: <code>de.caluga:poppydb:6.2.0</code></td>
+</tr>
+<tr>
+<td>Package</td>
+<td><code>de.caluga.morphium.server</code></td>
+<td><code>de.caluga.poppydb</code></td>
+</tr>
+<tr>
+<td>Main class</td>
+<td><code>MorphiumServer</code></td>
+<td><code>PoppyDB</code></td>
+</tr>
+<tr>
+<td>CLI class</td>
+<td><code>MorphiumServerCLI</code></td>
+<td><code>PoppyDBCLI</code></td>
+</tr>
+<tr>
+<td>CLI JAR</td>
+<td><code>morphium-*-server-cli.jar</code></td>
+<td><code>poppydb-*-cli.jar</code></td>
+</tr>
+<tr>
+<td>Test tag</td>
+<td><code>@Tag("morphiumserver")</code></td>
+<td><code>@Tag("poppydb")</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>What to change:</strong></p>
+<p>Add the PoppyDB dependency if you use the embedded server:
+<div class="language-xml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">&lt;dependency&gt;</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nt">&lt;groupId&gt;</span>de.caluga<span class="nt">&lt;/groupId&gt;</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>poppydb<span class="nt">&lt;/artifactId&gt;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">&lt;version&gt;</span>6.2.0<span class="nt">&lt;/version&gt;</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">&lt;scope&gt;</span>test<span class="nt">&lt;/scope&gt;</span><span class="w"> </span><span class="cm">&lt;!-- or remove scope for production use --&gt;</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">&lt;/dependency&gt;</span>
 </span></code></pre></div></p>
-<p>5) JCache integration and layering
-- Use <code>MorphiumCacheJCacheImpl</code> to adopt javax.cache
-- Optionally back it with an external provider for cross‑JVM cache layers
-<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">MorphiumCacheJCacheImpl</span><span class="w"> </span><span class="n">jcache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MorphiumCacheJCacheImpl</span><span class="p">();</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">cfg</span><span class="p">.</span><span class="na">cacheSettings</span><span class="p">().</span><span class="na">setCache</span><span class="p">(</span><span class="n">jcache</span><span class="p">);</span>
+<p>Update imports and class names:
+<div class="language-java highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// Before:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">de.caluga.morphium.server.MorphiumServer</span><span class="p">;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">MorphiumServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MorphiumServer</span><span class="p">(</span><span class="mi">27017</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1">// After:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="kn">import</span><span class="w"> </span><span class="nn">de.caluga.poppydb.PoppyDB</span><span class="p">;</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">PoppyDB</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">PoppyDB</span><span class="p">(</span><span class="mi">27017</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span>
 </span></code></pre></div></p>
-<p>6) Avoiding cache stampede
-- For heavy queries, consider:
-  - Pre‑warming popular keys at startup
-  - Adding small jitter to TTL at application level if you implement explicit invalidation
-  - Using <code>UPDATE_ENTRY</code> to keep hot IDs fresh without clearing type cache</p>
-<p>7) Eventual vs strong consistency
-- Read‑through caching is eventually consistent between nodes
-- To minimize staleness:
-  - Use smaller TTLs
-  - Prefer <code>REMOVE_ENTRY_FROM_TYPE_CACHE</code> or <code>UPDATE_ENTRY</code>
-  - Ensure messaging is available and responsive (replica set + change streams is preferred)</p>
-<p>8) Batching and write buffering
-- Global write buffering and async writes reduce DB pressure under load
-<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">cfg</span><span class="p">.</span><span class="na">cacheSettings</span><span class="p">().</span><span class="na">setAsyncWritesEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">cfg</span><span class="p">.</span><span class="na">cacheSettings</span><span class="p">().</span><span class="na">setBufferedWritesEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<p>Wire-protocol compatibility is preserved — PoppyDB responds to both <code>poppyDB: true</code> and <code>morphiumServer: true</code> in the hello handshake, so existing driver detection code continues to work.</p>
+<h3 id="3-multi-module-maven-structure">3. Multi-Module Maven Structure<a class="headerlink" href="#3-multi-module-maven-structure" title="Permanent link">&para;</a></h3>
+<p>Morphium is now a multi-module project:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>morphium-parent (de.caluga:morphium-parent) — BOM/parent POM
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── morphium-core (de.caluga:morphium)      — core ODM library
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>└── poppydb (de.caluga:poppydb)             — MongoDB-compatible server
 </span></code></pre></div>
-Trade‑off
-- Buffering can delay writes; choose TTLs and cache sync strategies accordingly</p>
-<p>9) Manual controls for maintenance
-<div class="language-java highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1">// Clear one type</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">morphium</span><span class="p">.</span><span class="na">clearCachefor</span><span class="p">(</span><span class="n">Product</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1">// Clear all types on all nodes</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="k">new</span><span class="w"> </span><span class="n">MessagingCacheSynchronizer</span><span class="p">(</span><span class="n">messaging</span><span class="p">,</span><span class="w"> </span><span class="n">morphium</span><span class="p">).</span><span class="na">sendClearAllMessage</span><span class="p">(</span><span class="s">&quot;maintenance&quot;</span><span class="p">);</span>
-</span></code></pre></div></p>
-<p>10) Query‑result cache keys
-- Morphium computes a deterministic key for queries (criteria + sort + projection + paging)
-- Prefer projections to keep cached result documents small</p>
-<p>See also
-- <a href="../caching-examples/">Caching Examples</a>
-- <a href="../../developer-guide/">Developer Guide</a></p>
+<p>The <code>de.caluga:morphium</code> artifact no longer bundles Netty and other server dependencies. This makes the core library ~90% leaner. <strong>No changes to your pom.xml needed</strong> unless you use PoppyDB (see above).</p>
+<h2 id="deprecations">Deprecations<a class="headerlink" href="#deprecations" title="Permanent link">&para;</a></h2>
+<h3 id="config-setters-moved-to-sub-objects">Config setters moved to sub-objects<a class="headerlink" href="#config-setters-moved-to-sub-objects" title="Permanent link">&para;</a></h3>
+<p>Some <code>MorphiumConfig</code> setters that were already delegating to sub-objects are now formally <code>@Deprecated</code>. They still work, but the sub-object API is preferred:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// Deprecated (still works):</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">cfg</span><span class="p">.</span><span class="na">setMessagingStatusInfoListenerEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1">// Preferred:</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">cfg</span><span class="p">.</span><span class="na">messagingSettings</span><span class="p">().</span><span class="na">setMessagingStatusInfoListenerEnabled</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+</span></code></pre></div>
+<p>The core config methods (<code>setDatabase()</code>, <code>addHostToSeed()</code>, etc.) were already migrated to sub-objects in 6.0 and remain available as convenience delegates.</p>
+<h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
+<h3 id="reference-cascade-deletestore">@Reference Cascade Delete/Store<a class="headerlink" href="#reference-cascade-deletestore" title="Permanent link">&para;</a></h3>
+<p><code>@Reference</code> now supports automatic lifecycle management:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@Entity</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Author</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nd">@Id</span><span class="w"> </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">cascadeDelete</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Book</span><span class="o">&gt;</span><span class="w"> </span><span class="n">books</span><span class="p">;</span><span class="w">  </span><span class="c1">// books deleted when author is deleted</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nd">@Reference</span><span class="p">(</span><span class="n">orphanRemoval</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Article</span><span class="o">&gt;</span><span class="w"> </span><span class="n">articles</span><span class="p">;</span><span class="w">  </span><span class="c1">// removed refs auto-deleted</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Circular references (A→B→A) are detected and handled safely.</p>
+<h3 id="autosequence">@AutoSequence<a class="headerlink" href="#autosequence" title="Permanent link">&para;</a></h3>
+<p>Annotation-driven auto-increment sequences:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@Entity</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Invoice</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nd">@Id</span><span class="w"> </span><span class="kd">private</span><span class="w"> </span><span class="n">MorphiumId</span><span class="w"> </span><span class="n">id</span><span class="p">;</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nd">@AutoSequence</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;invoice_number&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">startValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w"> </span><span class="n">inc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Long</span><span class="w"> </span><span class="n">invoiceNumber</span><span class="p">;</span><span class="w">  </span><span class="c1">// auto-assigned on store()</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<ul>
+<li>Supports <code>long</code>, <code>Long</code>, <code>int</code>, <code>Integer</code>, <code>String</code></li>
+<li>Only assigns when field is null/0 — explicit values are never overwritten</li>
+<li>Batch-optimized: <code>storeList()</code> fetches all sequence numbers in one round-trip</li>
+</ul>
+<h3 id="creationtime-improvements">@CreationTime Improvements<a class="headerlink" href="#creationtime-improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Field-only annotation</strong> now sufficient (class-level <code>@CreationTime</code> no longer required)</li>
+<li><strong><code>LocalDateTime</code> support</strong> added (in addition to <code>Date</code>, <code>long</code>, <code>String</code>)</li>
+<li>Preset values are no longer overwritten</li>
+</ul>
+<h3 id="cosmosdb-auto-detection">CosmosDB Auto-Detection<a class="headerlink" href="#cosmosdb-auto-detection" title="Permanent link">&para;</a></h3>
+<p>Morphium detects Azure CosmosDB connections via the hello handshake and adjusts behavior automatically. Query via <code>morphium.isCosmosDB()</code>.</p>
+<h3 id="poppydb-morphium-messaging-optimization">PoppyDB &amp; Morphium Messaging Optimization<a class="headerlink" href="#poppydb-morphium-messaging-optimization" title="Permanent link">&para;</a></h3>
+<p>PoppyDB and Morphium Messaging recognize each other and optimize their communication path. This results in lower latency and less overhead compared to using a real MongoDB as messaging backend.</p>
+<h2 id="dependency-updates">Dependency Updates<a class="headerlink" href="#dependency-updates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Library</th>
+<th>6.1.x</th>
+<th>6.2.0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>io.netty:netty-all</td>
+<td>4.1.100.Final</td>
+<td>4.2.9.Final</td>
+</tr>
+<tr>
+<td>org.mongodb:bson</td>
+<td>4.7.1</td>
+<td>4.11.5</td>
+</tr>
+<tr>
+<td>org.slf4j:slf4j-api</td>
+<td>2.0.0</td>
+<td>2.0.17</td>
+</tr>
+<tr>
+<td>ch.qos.logback</td>
+<td>1.5.24</td>
+<td>1.5.25</td>
+</tr>
+</tbody>
+</table>
+<p>If you depend on Netty or BSON directly, verify compatibility. Netty 4.2 is backward-compatible with 4.1 APIs.</p>
+<h2 id="migration-checklist">Migration Checklist<a class="headerlink" href="#migration-checklist" title="Permanent link">&para;</a></h2>
+<ol>
+<li>[ ] <strong>Search <code>catch (RuntimeException | MorphiumDriverException</code></strong> — simplify to <code>catch (RuntimeException</code></li>
+<li>[ ] <strong>Search <code>import de.caluga.morphium.server</code></strong> — replace with <code>import de.caluga.poppydb</code></li>
+<li>[ ] <strong>Search <code>MorphiumServer</code></strong> — rename to <code>PoppyDB</code></li>
+<li>[ ] <strong>Search <code>@Tag("morphiumserver")</code></strong> — rename to <code>@Tag("poppydb")</code></li>
+<li>[ ] <strong>Add <code>poppydb</code> dependency</strong> if you use the embedded server</li>
+<li>[ ] <strong>Review exception handling</strong> — <code>MorphiumDriverException</code> now caught by <code>catch (RuntimeException e)</code></li>
+<li>[ ] <strong>Update CLI scripts</strong> — JAR name changed to <code>poppydb-*-cli.jar</code></li>
+<li>[ ] <strong>Optional:</strong> adopt <code>@Reference(cascadeDelete)</code>, <code>@AutoSequence</code>, <code>@Version</code></li>
+<li>[ ] <strong>Optional:</strong> migrate deprecated config setters to sub-object API</li>
+</ol>
 
 
 
