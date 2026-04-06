@@ -48,3 +48,12 @@ package.json
 site/
 .morphiumserver-local
 .poppydb-local
+
+# datona-agent: generated AI skill files -- do not commit
+.claude/skills/
+
+# datona-agent: generated hook scripts -- do not commit
+.claude/hooks/
+
+# datona-agent: generated agent definitions -- do not commit
+.claude/agents/
