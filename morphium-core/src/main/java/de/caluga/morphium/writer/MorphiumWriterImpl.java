@@ -485,6 +485,25 @@ public class MorphiumWriterImpl implements MorphiumWriter, ShutdownListener {
         }
     }
 
+    /**
+     * Stores all entities in the given list. New entities (no ID or version == 0) are inserted;
+     * existing entities are updated. For entities annotated with {@code @Version}, optimistic
+     * locking is enforced: each update is conditioned on the current version matching the
+     * database value, and the version is incremented on success.
+     *
+     * <p><strong>Partial-commit behaviour for versioned entities:</strong> Updates are executed
+     * sequentially. If a {@link VersionMismatchException} is thrown for entity {@code N},
+     * entities {@code 0..N-1} have <em>already been committed</em> to the database and their
+     * in-memory version fields have already been incremented. The caller is responsible for
+     * handling this partial-commit state (e.g., by re-reading stale entities and retrying).</p>
+     *
+     * @param lst      the entities to store
+     * @param cln      optional collection name override (may be {@code null})
+     * @param callback optional async callback (may be {@code null} for synchronous execution)
+     * @param <T>      entity type
+     * @throws VersionMismatchException if a versioned entity's current version does not match
+     *                                  the database value (concurrent modification detected)
+     */
     @Override
     public <T> void store(final List<T> lst, String cln, AsyncOperationCallback<T> callback) {
         if (!lst.isEmpty()) {
@@ -594,34 +613,6 @@ public class MorphiumWriterImpl implements MorphiumWriter, ShutdownListener {
 
                             List<Object> entities = es.getValue();
 
-                            // Pre-build all update operations (parallel arrays)
-                            Object[] entityIds = new Object[entities.size()];
-                            long[] currentVersions = new long[entities.size()];
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object>[] filters = new Map[entities.size()];
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object>[] updateDocs = new Map[entities.size()];
-
-                            for (int i = 0; i < entities.size(); i++) {
-                                Object entity = entities.get(i);
-                                entityIds[i] = morphium.getId(entity);
-                                Object rawVersion = morphium.getARHelper().getValue(entity, javaVersionField);
-                                currentVersions[i] = rawVersion instanceof Number n ? n.longValue() : 0L;
-
-                                Map<String, Object> serialized = new LinkedHashMap<>(morphium.getMapper().serialize(entity));
-                                serialized.remove("_id");
-                                serialized.remove(mongoVersionField);
-
-                                // IMPORTANT: Use $and so that InMemoryDriver checks both conditions.
-                                // A flat multi-field map would only check _id in InMemoryDriver.
-                                filters[i] = Doc.of("$and", List.of(
-                                    Doc.of("_id", entityIds[i]),
-                                    Doc.of(mongoVersionField, currentVersions[i])));
-                                updateDocs[i] = Doc.of(
-                                    "$set", serialized,
-                                    "$inc", Doc.of(mongoVersionField, 1L));
-                            }
-
                             // Execute in chunks of cursorBatchSize.
                             // Each entity's conditional update is issued individually but all
                             // share a single connection per chunk to reduce pool overhead.
@@ -639,13 +630,31 @@ public class MorphiumWriterImpl implements MorphiumWriter, ShutdownListener {
                                 try {
                                     con = morphium.getDriver().getPrimaryConnection(wc);
                                     for (int i = offset; i < end; i++) {
+                                        Object entity = entities.get(i);
+                                        Object entityId = morphium.getId(entity);
+                                        Object rawVersion = morphium.getARHelper().getValue(entity, javaVersionField);
+                                        long currentVersion = rawVersion instanceof Number n ? n.longValue() : 0L;
+
+                                        Map<String, Object> serialized = new LinkedHashMap<>(morphium.getMapper().serialize(entity));
+                                        serialized.remove("_id");
+                                        serialized.remove(mongoVersionField);
+
+                                        // IMPORTANT: Use $and so that InMemoryDriver checks both conditions.
+                                        // A flat multi-field map would only check _id in InMemoryDriver.
+                                        Map<String, Object> filter = Doc.of("$and", List.of(
+                                            Doc.of("_id", entityId),
+                                            Doc.of(mongoVersionField, currentVersion)));
+                                        Map<String, Object> updateDoc = Doc.of(
+                                            "$set", serialized,
+                                            "$inc", Doc.of(mongoVersionField, 1L));
+
                                         UpdateMongoCommand upd = new UpdateMongoCommand(con)
                                             .setDb(morphium.getConfig().connectionSettings().getDatabase())
                                             .setColl(coll);
                                         if (wc != null) {
                                             upd.setWriteConcern(wc.asMap());
                                         }
-                                        upd.addUpdate(filters[i], updateDocs[i], null, false, false, null, null, null);
+                                        upd.addUpdate(filter, updateDoc, null, false, false, null, null, null);
 
                                         Map<String, Object> result = upd.execute();
                                         // WriteMongoCommand.execute() may swap the connection on retries
@@ -656,10 +665,10 @@ public class MorphiumWriterImpl implements MorphiumWriter, ShutdownListener {
                                         int matched = result.get("n") instanceof Number n ? n.intValue() : 0;
 
                                         if (matched == 0) {
-                                            throw new VersionMismatchException(entityIds[i], currentVersions[i]);
+                                            throw new VersionMismatchException(entityId, currentVersion);
                                         }
-                                        morphium.getARHelper().setValue(entities.get(i), currentVersions[i] + 1L, javaVersionField);
-                                        morphium.firePostStore(entities.get(i), false);
+                                        morphium.getARHelper().setValue(entity, currentVersion + 1L, javaVersionField);
+                                        morphium.firePostStore(entity, false);
                                     }
                                 } finally {
                                     if (con != null) {
