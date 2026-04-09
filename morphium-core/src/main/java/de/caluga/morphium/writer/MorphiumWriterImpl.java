@@ -940,6 +940,10 @@ public class MorphiumWriterImpl implements MorphiumWriter, ShutdownListener {
                         .setColl(coll);
                     upd.addUpdate(filter, update, null, false, false, null, null, null);
                     Map<String, Object> result = upd.execute();
+                    // WriteMongoCommand.execute() may swap the connection on retries
+                    // (e.g. "not primary" errors). Capture the potentially new reference
+                    // so the finally block releases the correct connection.
+                    con = upd.getConnection();
 
                     int matched = result.get("n") instanceof Number n ? n.intValue() : 0;
                     if (matched == 0) {
