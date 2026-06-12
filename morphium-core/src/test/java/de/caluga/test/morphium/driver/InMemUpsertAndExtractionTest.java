@@ -115,6 +115,27 @@ public class InMemUpsertAndExtractionTest {
                 .isNull();
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void dottedEqualityPredicateSeedsNestedDocument() throws Exception {
+        // {$and:[{_id:"x"},{"a.b": 1}]} — MongoDB seeds the dotted path as a nested doc {a:{b:1}}
+        Map<String, Object> filter = and(
+                eq("_id", "x"),
+                eq("a.b", 1));
+
+        upsert(filter, set("name", "n"));
+
+        Map<String, Object> stored = onlyDocument();
+        assertThat(stored.get("_id")).isEqualTo("x");
+        assertThat(stored.get("a"))
+                .as("dotted path a.b must be seeded as a nested document, not a literal key")
+                .isInstanceOf(Map.class);
+        assertThat(((Map<String, Object>) stored.get("a")).get("b")).isEqualTo(1);
+        assertThat(stored.containsKey("a.b"))
+                .as("the literal key \"a.b\" must not exist")
+                .isFalse();
+    }
+
     // --- helpers -------------------------------------------------------------
 
     /** {field: value} — an equality predicate. */

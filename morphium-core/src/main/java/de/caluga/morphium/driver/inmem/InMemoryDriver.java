@@ -4209,10 +4209,14 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
      * a scalar or {@code {$eq: value}} is an equality predicate and is copied; an operator
      * predicate ({@code $lte}, {@code $gt}, {@code $in}, ...) is ignored; a {@code null} value
      * removes the field.
+     *
+     * <p>Dotted field names (e.g. {@code "a.b"}) are seeded as nested documents
+     * ({@code {a:{b:value}}}), matching MongoDB and the rest of the driver's path handling, so a
+     * later query on {@code a.b} matches the upserted document.
      */
     private void seedField(String field, Object predicate, Map<String, Object> target) {
         if (predicate == null) {
-            target.remove(field);
+            removeSeed(target, field);
             return;
         }
 
@@ -4224,16 +4228,34 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                 // predicate (remove the field) so the field is left unset; for _id this lets the
                 // driver generate a fresh id rather than seeding an explicit null.
                 if (eqValue == null) {
-                    target.remove(field);
+                    removeSeed(target, field);
                 } else {
-                    target.put(field, eqValue);
+                    putSeed(target, field, eqValue);
                 }
             }
             // any other operator ($lte, $gt, $in, ...) implies no single value -> do not seed
             return;
         }
 
-        target.put(field, predicate);
+        putSeed(target, field, predicate);
+    }
+
+    /** Writes a seeded value, expanding dotted field names into nested documents. */
+    private void putSeed(Map<String, Object> target, String field, Object value) {
+        if (field.indexOf('.') >= 0) {
+            setByPath(target, field, value);
+        } else {
+            target.put(field, value);
+        }
+    }
+
+    /** Removes a seeded field, honouring dotted field names. */
+    private void removeSeed(Map<String, Object> target, String field) {
+        if (field.indexOf('.') >= 0) {
+            removeByPath(target, field);
+        } else {
+            target.remove(field);
+        }
     }
 
     private boolean isAndOperator(String field) {
