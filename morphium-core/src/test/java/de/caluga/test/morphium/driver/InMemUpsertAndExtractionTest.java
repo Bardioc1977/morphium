@@ -150,8 +150,9 @@ public class InMemUpsertAndExtractionTest {
     }
 
     private void deleteById(Object id) throws Exception {
+        // limit 1: deleting by a unique _id matches at most one document
         new DeleteMongoCommand(driver).setDb(DB).setColl(COLL)
-                .addDelete(Doc.of("_id", id), 0, null, null)
+                .addDelete(Doc.of("_id", id), 1, null, null)
                 .execute();
     }
 

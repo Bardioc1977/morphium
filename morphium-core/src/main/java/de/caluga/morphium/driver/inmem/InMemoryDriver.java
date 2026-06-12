@@ -4221,8 +4221,8 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
             if (ops.containsKey("$eq")) {
                 Object eqValue = ops.get("$eq");
                 // {field: {$eq: null}} carries no usable value to seed. Treat it like a null
-                // predicate (remove the field) so an upserted _id still gets a fresh generated
-                // id instead of a null that storeInternal would silently replace anyway.
+                // predicate (remove the field) so the field is left unset; for _id this lets the
+                // driver generate a fresh id rather than seeding an explicit null.
                 if (eqValue == null) {
                     target.remove(field);
                 } else {
