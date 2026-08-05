@@ -45,6 +45,8 @@ import de.caluga.morphium.async.AsyncOperationType;
 import de.caluga.morphium.driver.Doc;
 import de.caluga.morphium.driver.MorphiumCursor;
 import de.caluga.morphium.driver.MorphiumDriverException;
+import de.caluga.morphium.driver.MorphiumId;
+import org.bson.types.ObjectId;
 import de.caluga.morphium.driver.commands.CountMongoCommand;
 import de.caluga.morphium.driver.commands.DistinctMongoCommand;
 import de.caluga.morphium.driver.commands.ExplainCommand;
@@ -97,6 +99,7 @@ public class Query<T> implements Cloneable {
 
     private String overrideDB;
     private Collation collation;
+    private List<Map<String, Object>> arrayFilters;
     private int batchSize = 0;
     private UtilsMap<String, UtilsMap<String, String>> additionalFields;
     private Integer maxTimeMS = null;
@@ -144,6 +147,28 @@ public class Query<T> implements Cloneable {
 
     public Query<T> setCollation(Collation collation) {
         this.collation = collation;
+        return this;
+    }
+
+    public List<Map<String, Object>> getArrayFilters() {
+        return arrayFilters;
+    }
+
+    /**
+     * Sets the arrayFilters for subsequent update operations on this query (set/inc/unset/push/...).
+     * Each filter document defines one {@code $[<identifier>]} placeholder used in the update's
+     * field paths, e.g. {@code Doc.of("elem", Doc.of("$gte", 90))} for a path like
+     * {@code "values.$[elem]"}.
+     */
+    public Query<T> setArrayFilters(List<Map<String, Object>> arrayFilters) {
+        this.arrayFilters = arrayFilters;
+        return this;
+    }
+
+    /** Varargs convenience for {@link #setArrayFilters(List)}. */
+    @SafeVarargs
+    public final Query<T> setArrayFilters(Map<String, Object>... filters) {
+        this.arrayFilters = Arrays.asList(filters);
         return this;
     }
 
@@ -248,12 +273,14 @@ public class Query<T> implements Cloneable {
     }
 
     /**
-     * use rawQuery instead
+     * runs a raw query map against the collection.
      *
      * @param query
      * @return
+     * @deprecated use {@link #rawQuery(Map)} to set the query and the standard API
+     *             (e.g. {@code rawQuery(query).asList()}) instead; will be removed in 7.0
      */
-    @Deprecated
+    @Deprecated(since = "6.3", forRemoval = true)
     public List<T> complexQuery(Map<String, Object> query) {
         return complexQuery(query, (String) null, 0, 0);
     }
@@ -354,7 +381,6 @@ public class Query<T> implements Cloneable {
             settings = null;
             con = null;
         } catch (MorphiumDriverException e) {
-            // e.printStackTrace();
             log.error("Error while talking to mongo", e);
         } finally {
             if (settings != null) {
@@ -404,31 +430,9 @@ public class Query<T> implements Cloneable {
     @SuppressWarnings("ConstantConditions")
 
     public T findOneAndUpdate(Map<String, Object> update) {
-        Cache c = getARHelper().getAnnotationFromHierarchy(type, Cache.class); // type.getAnnotation(Cache.class);
-        boolean useCache = c != null && c.readCache() && morphium.isReadCacheEnabledForThread() && !InMemoryDriver.driverName.equals(morphium.getDriver().getName());
-        String ck = null;
-
-        if (useCache) {
-            ck = morphium.getCache().getCacheKey(this);
-            morphium.inc(StatisticKeys.READS);
-            if (morphium.getCache().isCached(type, ck)) {
-                morphium.inc(StatisticKeys.CHITS);
-                List<T> lst = morphium.getCache().getFromCache(type, ck);
-
-                if (lst == null || lst.isEmpty()) {
-                    return null;
-                } else {
-                    morphium.delete(lst.get(0));
-                    return lst.get(0);
-                }
-            }
-
-            morphium.inc(StatisticKeys.CMISS);
-        } else {
-            morphium.inc(StatisticKeys.NO_CACHED_READS);
-        }
-
-        long start = System.currentTimeMillis();
+        // find-and-update always has a write side-effect - it must never be served
+        // from the read cache (see #214)
+        morphium.inc(StatisticKeys.NO_CACHED_READS);
         Map<String, Object> ret = null;
         MongoConnection con = null;
         FindAndModifyMongoCommand settings = null;
@@ -450,7 +454,6 @@ public class Query<T> implements Cloneable {
             settings = null;
             con = null;
         } catch (MorphiumDriverException e) {
-            // e.printStackTrace();
             log.error("Error", e);
         } finally {
             if (settings != null) {
@@ -461,40 +464,152 @@ public class Query<T> implements Cloneable {
         }
 
         if (ret == null) {
-            List<T> lst = new ArrayList<>(0);
-
-            if (useCache) {
-                morphium.getCache().addToCache(ck, type, lst);
-            }
-
             return null;
         }
 
-        List<T> lst = new ArrayList<>(1);
-        long dur = System.currentTimeMillis() - start;
-        // morphium.fireProfilingReadEvent(this, dur, ReadAccessType.GET);
+        // a document was modified - invalidate cached reads so they cannot serve
+        // the pre-update state
+        morphium.getCache().clearCacheIfNecessary(type);
+        T unmarshall = morphium.getMapper().deserialize(type, ret);
 
-        if (ret != null) {
-            T unmarshall = morphium.getMapper().deserialize(type, ret);
+        if (unmarshall != null) {
+            morphium.firePostLoadEvent(unmarshall);
+            updateLastAccess(unmarshall);
+        }
 
-            if (unmarshall != null) {
-                morphium.firePostLoadEvent(unmarshall);
-                updateLastAccess(unmarshall);
-                lst.add(unmarshall);
+        return unmarshall;
+    }
 
-                if (useCache) {
-                    morphium.getCache().addToCache(ck, type, lst);
-                }
+    /**
+     * Atomic find-and-update with optional upsert semantics.
+     *
+     * @param update    the update document (may contain $set, $setOnInsert, $inc, ...)
+     * @param upsert    if true, a new document is inserted when no document matches the query
+     * @param returnNew if true, the document AFTER applying the update is returned; if false,
+     *                  the document as it was BEFORE the update is returned (matches the
+     *                  behaviour of {@link #findOneAndUpdate(Map)})
+     */
+    @SuppressWarnings("ConstantConditions")
+    public T findOneAndUpdate(Map<String, Object> update, boolean upsert, boolean returnNew) {
+        // NOTE: unlike the legacy findOneAndUpdate(Map), this method NEVER serves from / writes to
+        // the read cache. findOneAndUpdate always has a write side-effect (and, with upsert=true,
+        // can insert a new document), so satisfying it from a stale read cache is never correct -
+        // the analogous cache-hit branch in the legacy findOneAndUpdate(Map) calls morphium.delete(...)
+        // on a cache hit, which for an upsert would DELETE the matched document instead of upserting
+        // it (silent data loss) - hence it is intentionally not replicated here.
+        morphium.inc(StatisticKeys.NO_CACHED_READS);
+
+        Map<String, Object> queryObject = toQueryObject();
+        Map<String, Object> effectiveUpdate = update;
+
+        if (upsert) {
+            effectiveUpdate = addGeneratedIdOnInsertIfNeeded(queryObject, update);
+        }
+
+        long start = System.currentTimeMillis();
+        Map<String, Object> ret = null;
+        MongoConnection con = null;
+        FindAndModifyMongoCommand settings = null;
+
+        try {
+            var wc = getMorphium().getWriteConcernForClass(getType());
+            con = morphium.getDriver().getPrimaryConnection(wc);
+            settings = new FindAndModifyMongoCommand(con).setDb(getDB()).setColl(getCollectionName()).setQuery(Doc.of(queryObject)).setUpdate(Doc.of(effectiveUpdate)).setUpsert(upsert).setNewFlag(returnNew);
+            if (getSort() != null && !getSort().isEmpty()) {
+                settings.setSort(new Doc(getSort()));
+            }
+            if (wc != null) {
+                settings.setWriteConcern(wc.asMap());
             }
 
-            return unmarshall;
+            if (collation != null) {
+                settings.setCollation(Doc.of(collation.toQueryObject()));
+            }
+
+            ret = settings.execute();
+            settings.releaseConnection();
+            settings = null;
+            con = null;
+        } catch (MorphiumDriverException e) {
+            // MorphiumDriverException is already an unchecked exception (see
+            // MorphiumDriverExceptionTest) — let it propagate as-is so callers can catch it
+            // specifically, instead of masking it behind a generic RuntimeException. For an
+            // atomic write, the caller must be able to distinguish "no match" (null return,
+            // upsert=false) from "the write failed".
+            throw e;
+        } finally {
+            if (settings != null) {
+                settings.releaseConnection();
+            } else if (con != null) {
+                morphium.getDriver().releaseConnection(con);
+            }
         }
 
-        if (useCache) {
-            morphium.getCache().addToCache(ck, type, lst);
+        if (morphium.getCache() != null) {
+            morphium.getCache().clearCacheIfNecessary(type);
         }
 
-        return null;
+        if (ret == null) {
+            return null;
+        }
+
+        long dur = System.currentTimeMillis() - start;
+        // morphium.fireProfilingReadEvent(this, dur, ReadAccessType.GET);
+        T unmarshall = morphium.getMapper().deserialize(type, ret);
+
+        if (unmarshall != null) {
+            morphium.firePostLoadEvent(unmarshall);
+            updateLastAccess(unmarshall);
+        }
+
+        return unmarshall;
+    }
+
+    /**
+     * When performing an upsert-style findOneAndUpdate, MongoDB would otherwise assign a
+     * server-generated ObjectId to newly inserted documents. Morphium's store()-path always
+     * assigns a client-side id first (see MorphiumWriterImpl#setIdIfNull) so that String @Id
+     * fields end up with a MorphiumId-based UUID string rather than an ObjectId. This helper
+     * mirrors that behaviour for the upsert-insert case by adding a generated id via
+     * $setOnInsert - but ONLY if the caller has not already pinned down the id explicitly
+     * (via the query filter or via $set/$setOnInsert in the update document).
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> addGeneratedIdOnInsertIfNeeded(Map<String, Object> queryObject, Map<String, Object> update) {
+        if (queryObject.containsKey("_id")) {
+            return update;
+        }
+
+        Object setOnInsert = update.get("$setOnInsert");
+        if (setOnInsert instanceof Map && ((Map<String, Object>) setOnInsert).containsKey("_id")) {
+            return update;
+        }
+
+        Object set = update.get("$set");
+        if (set instanceof Map && ((Map<String, Object>) set).containsKey("_id")) {
+            return update;
+        }
+
+        Field idField = getARHelper().getIdField(type);
+        Object generatedId;
+
+        if (idField.getType().equals(MorphiumId.class)) {
+            generatedId = new MorphiumId();
+        } else if (idField.getType().equals(ObjectId.class)) {
+            generatedId = new ObjectId();
+        } else if (idField.getType().equals(String.class)) {
+            generatedId = new MorphiumId().toString();
+        } else if (idField.getType().isAssignableFrom(MorphiumId.class)) {
+            generatedId = new MorphiumId();
+        } else {
+            throw new IllegalArgumentException("Cannot generate ID of non-ID-Type");
+        }
+
+        Map<String, Object> newUpdate = new LinkedHashMap<>(update);
+        Map<String, Object> newSetOnInsert = setOnInsert instanceof Map ? new LinkedHashMap<>((Map<String, Object>) setOnInsert) : new LinkedHashMap<>();
+        newSetOnInsert.put("_id", generatedId);
+        newUpdate.put("$setOnInsert", newSetOnInsert);
+        return newUpdate;
     }
 
     public T findOneAndUpdateEnums(Map<Enum, Object> update) {
@@ -558,17 +673,20 @@ public class Query<T> implements Cloneable {
     }
 
     /**
-     * use rawQuery to set query, and standard API
+     * runs a raw query map against the collection with sort, skip and limit.
      *
      * @param query - query to be sent
      * @param sort
      * @param skip - amount to skip
      * @param limit - maximium number of results
      * @return
+     * @deprecated use {@link #rawQuery(Map)} to set the query and the standard API
+     *             ({@code sort()}, {@code skip()}, {@code limit()}, {@code asList()}) instead;
+     *             will be removed in 7.0
      */
     @SuppressWarnings("DeprecatedIsStillUsed")
 
-    @Deprecated
+    @Deprecated(since = "6.3", forRemoval = true)
     public List<T> complexQuery(Map<String, Object> query, Map<String, Integer> sort, int skip, int limit) {
         Cache ca = getARHelper().getAnnotationFromHierarchy(type, Cache.class); // type.getAnnotation(Cache.class);
         boolean useCache = ca != null && ca.readCache() && morphium.isReadCacheEnabledForThread() && !morphium.getDriver().getName().equals(InMemoryDriver.driverName);
@@ -1592,7 +1710,13 @@ public class Query<T> implements Cloneable {
         }
     }
 
-    @Deprecated
+    /**
+     * asynchronously gets an entity by its id.
+     *
+     * @deprecated use a standard query on the id field instead, e.g.
+     *             {@code q().f("_id").eq(id).get(callback)}; will be removed in 7.0
+     */
+    @Deprecated(since = "6.3", forRemoval = true)
     public void getById(final Object id, final AsyncOperationCallback<T> callback) {
         if (callback == null) {
             throw new IllegalArgumentException("Callback is null");
@@ -1613,7 +1737,13 @@ public class Query<T> implements Cloneable {
         getExecutor().submit(c);
     }
 
-    @Deprecated
+    /**
+     * gets an entity by its id.
+     *
+     * @deprecated use a standard query on the id field instead, e.g.
+     *             {@code q().f("_id").eq(id).get()}; will be removed in 7.0
+     */
+    @Deprecated(since = "6.3", forRemoval = true)
     public T getById(Object id) {
         @SuppressWarnings("unchecked")
         List<String> flds = getARHelper().getFields(type, Id.class);
@@ -2270,15 +2400,28 @@ public class Query<T> implements Cloneable {
         return text(metaScoreField, lang, true, true, text);
     }
 
-    @Deprecated
+    /**
+     * runs a text search using the legacy {@code text} command.
+     *
+     * @deprecated use the {@code $text} query operator via {@link #text(String...)} and the
+     *             standard API (e.g. {@code text(texts).asList()}) instead; will be removed in 7.0
+     */
+    @Deprecated(since = "6.3", forRemoval = true)
     public List<T> textSearch(String ... texts) {
         // noinspection deprecation
         return textSearch(TextSearchLanguages.mongo_default, texts);
     }
 
+    /**
+     * runs a text search using the legacy {@code text} command.
+     *
+     * @deprecated use the {@code $text} query operator via
+     *             {@link #text(TextSearchLanguages, String...)} and the standard API
+     *             (e.g. {@code text(lang, texts).asList()}) instead; will be removed in 7.0
+     */
     @SuppressWarnings("CastCanBeRemovedNarrowingVariableType")
 
-    @Deprecated
+    @Deprecated(since = "6.3", forRemoval = true)
     public List<T> textSearch(TextSearchLanguages lang, String ... texts) {
         if (texts.length == 0) {
             return new ArrayList<>();

@@ -25,6 +25,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static de.caluga.morphium.driver.MorphiumDriver.DriverStatsKey.*;
@@ -40,6 +41,23 @@ public class SingleMongoConnection implements MongoConnection {
     private volatile int cachedSourcePort = 0;
 
     private AtomicInteger msgId = new AtomicInteger(1000);
+
+    // requestId -> command name of sent requests whose reply has not been read yet. A
+    // connection with a pending reply is POISONED for reuse: the next borrower would read
+    // its predecessor's answer ("out of sync: expected reply to X, got reply to Y" - the
+    // wire-desync family). PooledDriver.releaseConnection closes such connections instead
+    // of pooling them, and the out-of-sync detection uses this map to NAME the command
+    // that abandoned its reply. Tracked on send (unless fire-and-forget/moreToCome),
+    // cleared on every successfully read message and on close.
+    private final Map<Integer, String> pendingReplies = new ConcurrentHashMap<>();
+    // command name of the request the most recently read reply answered (null if unknown) -
+    // names the abandoning command when readReplyFor detects an out-of-sync stream
+    private volatile String lastReadReplyOrigin;
+
+    // Extra client-side wait on top of a watch getMore's maxTimeMS: the server answers
+    // within maxTimeMS, this grace covers network and processing time. Only a truly broken
+    // connection exceeds it.
+    static final int WATCH_READ_GRACE_MS = 10_000;
 
     //    private List<OpMsg> replies = Collections.synchronizedList(new ArrayList<>());
     // private Thread readerThread = null;
@@ -109,7 +127,11 @@ public class SingleMongoConnection implements MongoConnection {
         // startReaderThread();
         // Cache the source port for later use (needed for cleanup even after socket close)
         cachedSourcePort = s.getLocalPort();
-        var hello = getHelloResult(true);
+        // The handshake against a freshly connected host must answer quickly. Using
+        // maxWaitTime here would make connects to half-dead hosts (TCP accepted, mongod
+        // frozen) hang for up to a minute - stalling startup and the heartbeat.
+        int helloTimeout = drv.getConnectionTimeout() > 0 ? Math.max(drv.getConnectionTimeout(), 2000) : 5000;
+        var hello = getHelloResult(true, helloTimeout);
         connectedTo = host;
         connectedToPort = port;
         //log.info("Connected to "+connectedTo+":"+port);
@@ -214,11 +236,22 @@ public class SingleMongoConnection implements MongoConnection {
     }
 
     public HelloResult getHelloResult(boolean includeClient) throws MorphiumDriverException {
+        return getHelloResult(includeClient, getDriver().getMaxWaitTime());
+    }
+
+    /**
+     * Hello with an explicit reply timeout. Used by the connection handshake and the
+     * heartbeat: a hello against a host that accepted the TCP connection but never
+     * answers (frozen VM, network partition) must not block for maxWaitTime -
+     * otherwise dead-host detection takes minutes.
+     */
+    public HelloResult getHelloResult(boolean includeClient, int timeoutMs) throws MorphiumDriverException {
         OpMsg result = null;
         long start = System.currentTimeMillis();
 
         while (null == result) {
-            HelloCommand cmd = new HelloCommand(null);
+            // pass this connection so the client metadata (driver name, appName) can be resolved
+            HelloCommand cmd = new HelloCommand(this);
 
             if (authDb != null) {
                 cmd.setUser(user);
@@ -233,9 +266,9 @@ public class SingleMongoConnection implements MongoConnection {
             OpMsg msg = new OpMsg();
             msg.setMessageId(msgId.incrementAndGet());
             msg.setFirstDoc(cmd.asMap());
-            result = sendAndWaitForReply(msg);
+            result = sendAndWaitForReply(msg, timeoutMs);
 
-            if (result == null && System.currentTimeMillis() - start > getDriver().getMaxWaitTime()) {
+            if (result == null && System.currentTimeMillis() - start > timeoutMs) {
                 throw new MorphiumDriverException("Hello result is null");
             }
 
@@ -378,9 +411,11 @@ public class SingleMongoConnection implements MongoConnection {
 
         // For watch/tailable scenarios, limit consecutive socket timeouts
         // This allows calling code to check isContinued() periodically
-        // 100 retries with 100ms timeout = ~10 seconds before returning to allow checks
-        int maxConsecutiveTimeouts = 100;
-        int consecutiveTimeouts = 0;
+        // The timeout parameter is the TOTAL time we wait for a reply. It must not be
+        // multiplied by retries: a frozen/partitioned host would otherwise block callers
+        // for timeout*100 (with maxWaitTime=60s that is over an hour) and dead-host
+        // detection would never kick in.
+        long deadline = timeout > 0 ? System.currentTimeMillis() + timeout : Long.MAX_VALUE;
 
         while (true) {
             try {
@@ -399,6 +434,9 @@ public class SingleMongoConnection implements MongoConnection {
                     byte[] msgb = opc.getCompressedMessage();
                     OpMsg message = new OpMsg();
                     message.setMessageId(opc.getMessageId());
+                    // the outer OP_COMPRESSED header carries the real responseTo - without it,
+                    // reply/request matching would flag every compressed reply as out-of-sync
+                    message.setResponseTo(opc.getResponseTo());
                     message.parsePayload(msgb, 0);
                     msg = message;
                 } else {
@@ -410,22 +448,33 @@ public class SingleMongoConnection implements MongoConnection {
                 }
 
                 stats.get(REPLY_RECEIVED).incrementAndGet();
+                // central un-track for every read path (readReplyFor, watch loops, ...);
+                // remember the origin for the out-of-sync diagnostics in readReplyFor
+                lastReadReplyOrigin = pendingReplies.remove(msg.getResponseTo());
                 return msg;
             } catch (SocketTimeoutException ste) {
-                consecutiveTimeouts++;
-                if (consecutiveTimeouts >= maxConsecutiveTimeouts) {
-                    log.debug("socket timeout - max retries reached, returning null to allow continuation check");
+                // Raw SocketTimeoutException from parseFromStream means 0 bytes were consumed:
+                // the stream is still message-aligned, retrying the read is safe.
+                if (System.currentTimeMillis() >= deadline) {
+                    // No reply within the caller's total timeout. A late reply may still arrive
+                    // on this connection - the next user would read a stale answer (watch() reads
+                    // without responseTo verification!). Close instead of handing back a landmine.
+                    log.debug("socket timeout - deadline reached, closing connection");
+                    close();
                     return null;
                 }
-                log.debug("socket timeout - retrying ({}/{})", consecutiveTimeouts, maxConsecutiveTimeouts);
+                log.debug("socket timeout - retrying until deadline");
             } catch (Exception e) {
-                if (e.getCause() instanceof SocketTimeoutException) {
-                    consecutiveTimeouts++;
-                    if (consecutiveTimeouts >= maxConsecutiveTimeouts) {
-                        log.debug("socket timeout - max retries reached, returning null to allow continuation check");
+                // MorphiumDriverNetworkException is always fatal for this connection, even with a
+                // SocketTimeoutException cause: parseFromStream wraps a mid-message timeout that
+                // way ("stream desynchronized") - retrying the parse would read payload as header.
+                if (!(e instanceof MorphiumDriverNetworkException) && e.getCause() instanceof SocketTimeoutException) {
+                    if (System.currentTimeMillis() >= deadline) {
+                        log.debug("socket timeout - deadline reached, closing connection");
+                        close();
                         return null;
                     }
-                    log.debug("socket timeout - retry ({}/{})", consecutiveTimeouts, maxConsecutiveTimeouts);
+                    log.debug("socket timeout - retrying until deadline");
                     continue;
                 } else if (running) {
                     log.warn("Connection error on {} (port {}), closing connection: {}",
@@ -450,6 +499,8 @@ public class SingleMongoConnection implements MongoConnection {
     public void close() {
         running = false;
         connected = false;
+        // a closed connection can no longer deliver stale replies - the poison is gone
+        pendingReplies.clear();
 
         if (in != null) {
             try {
@@ -558,7 +609,9 @@ public class SingleMongoConnection implements MongoConnection {
                 byte[] data = q.getPayload();
                 opc.setCompressedMessage(data);
                 opc.setSize(data.length + 4);
-                opc.setMessageId(msgId.incrementAndGet());
+                // per spec the OP_COMPRESSED header carries the requestID of the original
+                // message - a fresh id would make the server reply to an id nobody waits for
+                opc.setMessageId(q.getMessageId());
                 opc.setUncompressedSize(data.length);
                 // log.info(Utils.getHex(opc.bytes()));
                 out.write(opc.bytes());
@@ -567,6 +620,13 @@ public class SingleMongoConnection implements MongoConnection {
             }
 
             out.flush();
+
+            // moreToCome on a REQUEST = fire-and-forget (w:0), the server sends no reply
+            if ((q.getFlags() & OpMsg.MORE_TO_COME) == 0) {
+                Map<String, Object> doc = q.getFirstDoc();
+                pendingReplies.put(q.getMessageId(),
+                    doc == null || doc.isEmpty() ? "?" : doc.keySet().iterator().next());
+            }
         } catch (MorphiumDriverException e) {
             close();
             throw (e);
@@ -586,14 +646,68 @@ public class SingleMongoConnection implements MongoConnection {
         }
     }
 
+    /**
+     * True while a sent request's reply has not been read yet. Such a connection is
+     * poisoned for reuse (the next borrower would read its predecessor's answer) -
+     * {@code PooledDriver.releaseConnection} closes it instead of pooling it.
+     */
+    @Override
+    public boolean hasPendingReplies() {
+        return !pendingReplies.isEmpty();
+    }
+
+    /** The pending requestId->command entries, for the close-instead-of-pool log line. */
+    public String pendingReplySummary() {
+        return pendingReplies.toString();
+    }
+
+    /**
+     * True when every pending reply belongs to a getMore - the expected shape of a
+     * tailable/awaitData teardown: stopping to tail structurally means walking away from
+     * an in-flight getMore the server is still holding open, there is nothing to fix.
+     * Anything else pending means a caller abandoned a reply it should have read.
+     */
+    public boolean pendingRepliesAreOnlyGetMore() {
+        return !pendingReplies.isEmpty() && pendingReplies.values().stream().allMatch("getMore"::equals);
+    }
+
     public synchronized OpMsg sendAndWaitForReply(OpMsg q) throws MorphiumDriverException {
+        return sendAndWaitForReply(q, driver.getMaxWaitTime());
+    }
+
+    public synchronized OpMsg sendAndWaitForReply(OpMsg q, int timeout) throws MorphiumDriverException {
         sendQuery(q);
-        return readNextMessage(driver.getMaxWaitTime());//getReplyFor(q.getMessageId(), driver.getMaxWaitTime());
+        return readReplyFor(q.getMessageId(), timeout);
+    }
+
+    /**
+     * Reads the next message and verifies it actually answers the given request.
+     * If the reply's responseTo does not match, this connection's stream is out of sync
+     * (a reply was left unread by an earlier aborted/timed-out request) - every subsequent
+     * caller would receive its predecessor's answer (seen in prod as "cursor id not found"
+     * on fresh finds, 2026-07-11/12). The connection is poisoned: close it and throw a
+     * retriable network exception so callers retry on a fresh connection.
+     */
+    private OpMsg readReplyFor(int requestId, int timeout) throws MorphiumDriverException {
+        OpMsg reply = readNextMessage(timeout);
+
+        if (reply != null && reply.getResponseTo() != requestId) {
+            // lastReadReplyOrigin names the command whose caller abandoned this reply without
+            // closing the connection - the actual bug to hunt, this here is only the backstop
+            log.error("Connection to {} out of sync: expected reply to request {}, got reply to {} "
+                + "(abandoned by command '{}') - closing connection",
+                connectedTo, requestId, reply.getResponseTo(), lastReadReplyOrigin);
+            close();
+            throw new MorphiumDriverNetworkException("Connection out of sync: expected reply to request "
+                + requestId + ", got reply to " + reply.getResponseTo());
+        }
+
+        return reply;
     }
 
     @Override
     public Map<String, Object> readSingleAnswer(int id) throws MorphiumDriverException {
-        OpMsg reply = readNextMessage(driver.getMaxWaitTime());//getReplyFor(id, driver.getMaxWaitTime());
+        OpMsg reply = readReplyFor(id, driver.getMaxWaitTime());
 
         if (reply == null) {
             return null;
@@ -685,12 +799,20 @@ public class SingleMongoConnection implements MongoConnection {
         boolean registrationCallbackCalled = false;
 
         long watchIterations = 0;
+        try {
         while (true) {
             watchIterations++;
             OpMsg reply = null;
 
             try {
-                reply = readNextMessage(maxWait);//getReplyFor(msg.getMessageId(), command.getMaxTimeMS());
+                // The server answers a getMore within maxTimeMS (empty batch on no events).
+                // Waiting only maxWait client-side loses the race against network/processing
+                // time: the client hits its deadline just before the reply arrives, "restarts"
+                // the stream in place and thereby (a) leaks the previous server-side cursor
+                // (seen as hundreds of idle $changeStream cursors in prod) and (b) leaves the
+                // late reply unread in the stream - desyncing every following read (Error 43
+                // on unrelated queries, planner stall 2026-07-11/12). Grant a grace period.
+                reply = readNextMessage(maxWait + WATCH_READ_GRACE_MS);
             } catch (MorphiumDriverException e) {
                 if (e.getMessage().contains("server did not answer in time: ") || e.getMessage().contains("Read timed out")) {
                     log.debug("WATCH: timeout, resending query");
@@ -703,7 +825,7 @@ public class SingleMongoConnection implements MongoConnection {
 
             //log.info("got answer for watch!");
 
-            // Handle null reply (can happen after max socket timeout retries)
+            // Handle null reply (no answer within maxTimeMS + grace)
             // Check isContinued() to allow caller to detect staleness and decide to stop
             if (reply == null) {
                 log.debug("Got null as reply - checking if should continue");
@@ -711,18 +833,23 @@ public class SingleMongoConnection implements MongoConnection {
                     log.debug("Callback indicates stop - exiting watch loop");
                     break;
                 }
-                // Callback wants to continue - restart the watch with resume token if available
-                log.debug("Restarting watch after null reply");
+
+                // No reply although the server must answer within maxTimeMS: this connection
+                // is suspect - a late reply may still be in flight. Restarting the stream on
+                // the same connection would desync the reply stream and leak the server-side
+                // cursor. Close and let the caller (ChangeStreamMonitor) resume on a fresh
+                // connection using its tracked resume token.
                 if (lastResumeToken[0] != null) {
                     command.setResumeAfter(lastResumeToken[0]);
-                    startMsg.setFirstDoc(command.asMap());
-                    msg = startMsg;
-                    log.debug("Resuming from token after null reply");
                 }
-                msg.setMessageId(msgId.incrementAndGet());
-                sendQuery(msg);
-                continue;
+                log.warn("watch: no reply within maxTimeMS+{}ms grace on {} - closing connection, caller should resume", WATCH_READ_GRACE_MS, connectedTo);
+                close();
+                throw new MorphiumDriverNetworkException("watch: no reply within maxTimeMS + grace - connection closed, resume on a fresh connection");
             }
+
+            // liveness heartbeat: the server answers a getMore within maxTimeMS even without
+            // events - a fresh stamp means the stream is provably alive and in sync
+            command.setLastReplyAt(System.currentTimeMillis());
 
             checkForError(reply);
 
@@ -736,6 +863,19 @@ public class SingleMongoConnection implements MongoConnection {
             // log.debug("CursorID:" + cursor.get("id").toString());
             long cursorId = Long.parseLong(cursor.get("id").toString());
             command.setMetaData("cursor", cursorId);
+
+            // PoppyDB-specific, best-effort: some servers (PoppyDB primaries) piggyback their
+            // current change-stream sequence on the initial aggregate response, following the
+            // same convention as the "poppyResumeSequence" resumeAfter marker. A real MongoDB
+            // server never sends this field, so it is simply absent there. Stash it as generic
+            // command metadata (same mechanism as "cursor"/"server" above) so callers with access
+            // to this command instance - e.g. a registrationCallback - can read the primary's
+            // sequence at the exact moment the watch was established, without widening the
+            // registrationCallback's Runnable signature.
+            Object primarySequence = reply.getFirstDoc().get("poppyPrimarySequence");
+            if (primarySequence != null) {
+                command.setMetaData("poppyPrimarySequence", primarySequence);
+            }
 
             // Call registration callback once the watch cursor is established
             // This signals to ChangeStreamMonitor that the watch is ready to receive events
@@ -759,7 +899,8 @@ public class SingleMongoConnection implements MongoConnection {
             // Track whether we should exit after processing events
             boolean shouldExit = false;
             if (result != null && !result.isEmpty()) {
-                log.info("WATCH: received batch of {} events for coll={} (iter={})", result.size(), command.getColl(), watchIterations);
+                // demoted to debug (#264): one line per watch batch is production log spam
+                log.debug("WATCH: received batch of {} events for coll={} (iter={})", result.size(), command.getColl(), watchIterations);
                 for (Map<String, Object> o : result) {
                     // Capture resume token from each event (_id is the resume token in change streams)
                     @SuppressWarnings("unchecked")
@@ -777,10 +918,24 @@ public class SingleMongoConnection implements MongoConnection {
                     // Check isContinued() after EACH event, matching InMemoryDriver behavior
                     // This ensures we stop immediately when callback returns false
                     if (!command.getCb().isContinued()) {
-                        log.info("WATCH: isContinued returned false, will exit - coll={}", command.getColl());
+                        log.debug("WATCH: isContinued returned false, will exit - coll={}", command.getColl());
                         shouldExit = true;
                         break;
                     }
+                }
+            }
+
+            // The server sends postBatchResumeToken with EVERY reply, including empty batches.
+            // It is the only token a consumer has while no events flow - exactly the situation
+            // in which a dying watch would otherwise restart at "now" and lose the gap. Only
+            // adopt it for fully processed batches (shouldExit means we broke out mid-batch,
+            // the token would skip the events we did not deliver).
+            if (!shouldExit) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> postBatchResumeToken = (Map<String, Object>) cursor.get("postBatchResumeToken");
+
+                if (postBatchResumeToken != null) {
+                    lastResumeToken[0] = postBatchResumeToken;
                 }
             }
 
@@ -833,6 +988,15 @@ public class SingleMongoConnection implements MongoConnection {
                 sendQuery(msg);
             }
         }
+        } finally {
+            // Publish the freshest resume token on EVERY exit - normal stop, grace timeout or
+            // network death. Without this, a consumer that never received an event has no token
+            // at all and its restart begins at "now", silently dropping everything written
+            // while the watch was down.
+            if (lastResumeToken[0] != null) {
+                command.setResumeAfter(lastResumeToken[0]);
+            }
+        }
     }
 
     @Override
@@ -843,7 +1007,7 @@ public class SingleMongoConnection implements MongoConnection {
 
     @Override
     public MorphiumCursor getAnswerFor(int queryId, int batchSize) throws MorphiumDriverException {
-        OpMsg reply = readNextMessage(driver.getMaxWaitTime());//getReplyFor(queryId, driver.getMaxWaitTime());
+        OpMsg reply = readReplyFor(queryId, driver.getMaxWaitTime());
         checkForError(reply);
 
         if (reply == null) {

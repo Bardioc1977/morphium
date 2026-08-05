@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>de.caluga</groupId>
   <artifactId>morphium-parent</artifactId>
-  <version>6.2.4</version>
+  <version>6.3.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Morphium Parent</name>
   <url>http://caluga.de</url>
@@ -21,7 +21,7 @@
     <url>https://github.com/sboesebeck/morphium</url>
     <connection>scm:git:git://github.com/sboesebeck/morphium.git</connection>
     <developerConnection>scm:git:git@github.com:sboesebeck/morphium.git</developerConnection>
-    <tag>v6.2.4</tag>
+    <tag>v6.2.7</tag>
   </scm>
   <developers>
     <developer>
@@ -45,10 +45,12 @@
     <mongodbDriver.version>4.11.5</mongodbDriver.version>
     <netty.version>4.2.9.Final</netty.version>
     <!--  This is required for later correct replacement of argline -->
-    <argLine />
-    <!-- JUnit tag control (defaults) -->
-    <test.includeTags />
-    <test.excludeTags>external</test.excludeTags>
+    <argLine/>
+    <!-- JUnit tag control (defaults)
+         external = needs a real MongoDB (enabled by -Pexternal)
+         manual   = process-killing / hardcoded-local tests, NEVER in CI -->
+    <test.includeTags/>
+    <test.excludeTags>external,manual</test.excludeTags>
   </properties>
   <build>
     <pluginManagement>
@@ -201,12 +203,12 @@
       <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-core</artifactId>
-        <version>1.5.25</version>
+        <version>1.5.37</version>
       </dependency>
       <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-classic</artifactId>
-        <version>1.5.25</version>
+        <version>1.5.37</version>
       </dependency>
       <dependency>
         <groupId>com.colofabrix.scala</groupId>
@@ -336,7 +338,8 @@
     <profile>
       <id>external</id>
       <properties>
-        <test.excludeTags />
+        <!-- enable external-tagged tests, but manual-only tests stay excluded -->
+        <test.excludeTags>manual</test.excludeTags>
       </properties>
       <build>
         <plugins>

@@ -108,6 +108,13 @@ public class PooledDriver extends DriverBase {
     private final Logger log = LoggerFactory.getLogger(PooledDriver.class);
     private volatile String primaryNode;
     private final Object primaryNodeLock = new Object();  // Lock for primaryNode updates only
+    // Last error seen while trying to establish a connection to any seed host. Surfaced in the
+    // "No primary node found" timeout exception so callers see the actual cause (e.g. a TLS
+    // handshake failure) instead of a bare timeout message. Also exposed via
+    // getLastConnectFailure() for the non-replicaset path, where connect() itself never throws
+    // (it tolerates the failed seed and falls back to "treat first seed as primary") - a caller
+    // polling isConnected() has no other way to learn why it's still false.
+    private volatile Throwable lastConnectFailure;
     private volatile boolean inMemoryBackend = false;
     private volatile boolean poppyDB = false;
     private volatile boolean cosmosDB = false;
@@ -171,7 +178,9 @@ public class PooledDriver extends DriverBase {
             try {
                 createNewConnection(host);
             } catch (Exception e) {
-                // swallow: unreachable seed(s) are handled by the heartbeat/error logic
+                // swallow: unreachable seed(s) are handled by the heartbeat/error logic, but remember
+                // the failure so a subsequent "No primary node found" timeout can report the real cause.
+                lastConnectFailure = e;
                 if (log.isDebugEnabled()) {
                     log.debug("Initial connect to seed {} failed", host, e);
                 }
@@ -188,7 +197,9 @@ public class PooledDriver extends DriverBase {
 
             while (primaryNode == null) {
                 if (System.currentTimeMillis() - start > timeout) {
-                    throw new MorphiumDriverException("No primary node found - not connected yet?");
+                    Throwable cause = lastConnectFailure;
+                    String detail = cause == null ? "" : " - last connection error: " + cause;
+                    throw new MorphiumDriverException("No primary node found - not connected yet?" + detail, cause);
                 }
                 try {
                     Thread.sleep(50);
@@ -267,6 +278,11 @@ public class PooledDriver extends DriverBase {
      * and pool lookups keep working.
      */
     private final ConcurrentHashMap<String, String> hostAliases = new ConcurrentHashMap<>();
+
+    /** currently known primary (normalized host:port) - null while failover is in progress */
+    public String getPrimaryNode() {
+        return primaryNode;
+    }
 
     private String resolveAlias(String hostPort) {
         if (hostPort == null) return null;
@@ -353,10 +369,25 @@ public class PooledDriver extends DriverBase {
         connect(null);
     }
 
-    private void handleHelloResult(HelloResult hello, String hostConnected) {
+    /** package-private for testing */
+    void handleHelloResult(HelloResult hello, String hostConnected) {
         if (!running) return;
         if (hello == null)
             return;
+
+        // Adopt the wire limits the server advertises - they exist precisely so clients
+        // bound what they send (message splitting, batch sizing, document size checks)
+        if (hello.getMaxMessageSizeBytes() != null) {
+            setMaxMessageSize(hello.getMaxMessageSizeBytes());
+        }
+
+        if (hello.getMaxWriteBatchSize() != null) {
+            setMaxWriteBatchSize(hello.getMaxWriteBatchSize());
+        }
+
+        if (hello.getMaxBsonObjectSize() != null) {
+            setMaxBsonObjectSize(hello.getMaxBsonObjectSize());
+        }
 
         // Detect backend type from hello handshake
         if (!poppyDB && Boolean.TRUE.equals(hello.getPoppyDB())) {
@@ -437,7 +468,9 @@ public class PooledDriver extends DriverBase {
                     primaryNode = null;
                 } else if (primaryNode == null && hello.getPrimary() != null) {
                     // Only use the advertised primary if it maps to a known/reachable host key.
-                    String advertised = resolveAlias(hello.getPrimary());
+                    // Must be normalized like the hosts-map keys (lowercase + port): replica set
+                    // configs may advertise members with different casing than the client seed.
+                    String advertised = normalizeHostKey(resolveAlias(hello.getPrimary()));
                     if (hosts.containsKey(advertised)) {
                         primaryNode = advertised;
                     }
@@ -564,6 +597,8 @@ public class PooledDriver extends DriverBase {
                     log.debug("Error during borrowed connection cleanup", e);
                 }
 
+                reseedIfAllHostsEvicted();
+
                 for (var entry : hosts.entrySet()) {
                     var hst = entry.getKey();
                     var host = entry.getValue();
@@ -653,7 +688,12 @@ public class PooledDriver extends DriverBase {
                                         markStatsDirty();
                                         containerDisposed = true;
                                     } else {
-                                        result = container.getCon().getHelloResult(false);
+                                        // Bounded hello: a frozen/partitioned host must fail the
+                                        // heartbeat check within ~a heartbeat, not after maxWaitTime.
+                                        // Otherwise eviction (MAX_FAILURES) takes minutes and all
+                                        // in-flight operations stay stuck on dead connections.
+                                        result = container.getCon().getHelloResult(false,
+                                                Math.max(2000, getHeartbeatFrequency()));
 
                                         long dur = System.currentTimeMillis() - start;
 
@@ -713,7 +753,6 @@ public class PooledDriver extends DriverBase {
                                       && getTotalConnectionsToHost(hst) < getMaxConnectionsPerHost())
                                      || getTotalConnectionsToHost(hst) < getMinConnectionsPerHost())) {
                                 // log.info("Creating new connection to {}", hst);
-                                // System.out.println("Creating new connection to " + hst);
                                 loopCounter++;
                                 // log.debug("Creating connection to {} - totalConnections to host is {}", hst,
                                 // getTotalConnectionsToHost(hst));
@@ -722,7 +761,16 @@ public class PooledDriver extends DriverBase {
 
                             // log.info("Finished connection creation");
                         } catch (Throwable e) {
-                            log.error("Could not create connection to host {}", hst, e);
+                            // full stacktrace only on the first failure - a host that is down
+                            // for a while would otherwise flood the log every heartbeat
+                            lastConnectFailure = e;
+                            Host failedHost = hosts.get(normalizeHostKey(hst));
+                            if (failedHost == null || failedHost.getFailures() == 0) {
+                                log.error("Could not create connection to host {}", hst, e);
+                            } else {
+                                log.warn("Still cannot connect to host {} ({} consecutive failures): {}",
+                                         hst, failedHost.getFailures(), e.getMessage());
+                            }
                             onConnectionError(hst);
                         } finally {
                             hostThreads.remove(hst);
@@ -813,6 +861,30 @@ public class PooledDriver extends DriverBase {
         }
     }
 
+    /**
+     * After a full cluster outage every host may have been evicted by
+     * onConnectionError() (MAX_FAILURES exceeded on all of them). The heartbeat
+     * only iterates the hosts map, and handleHelloResult() — the only place that
+     * (re-)adds hosts — only runs from heartbeat threads. With an empty map the
+     * driver could therefore never recover, even after the cluster returned (#233).
+     * Re-seeding from the configured host seed restarts the normal discovery
+     * cycle (hello → handleHelloResult → primary election).
+     */
+    void reseedIfAllHostsEvicted() {
+        if (!hosts.isEmpty() || getHostSeed() == null) {
+            return;
+        }
+
+        for (String seedHost : getHostSeed()) {
+            String normalizedHost = normalizeHostKey(seedHost);
+            hosts.putIfAbsent(normalizedHost, new Host(getHost(normalizedHost), getPortFromHost(normalizedHost)));
+        }
+
+        if (!hosts.isEmpty()) {
+            log.warn("All hosts had been evicted - re-seeded {} host(s) from the host seed for re-discovery", hosts.size());
+        }
+    }
+
     private void onConnectionError(String host) {
         if (!running) return;
         // empty pool for host, as connection to it failed
@@ -852,8 +924,18 @@ public class PooledDriver extends DriverBase {
                 }
             }
             for (Integer port : borrowedToDelete) {
-                if (borrowedConnections.remove(port) != null) {
+                ConnectionContainer removed = borrowedConnections.remove(port);
+                if (removed != null) {
                     h.decrementBorrowedConnections();
+                    // Close the connection: threads blocked in a read on this dead host
+                    // (e.g. frozen VM, network partition) are woken up immediately with a
+                    // network error and can retry on the new primary. Without this they
+                    // hang until the socket read timeout (maxWaitTime) expires.
+                    try {
+                        removed.getCon().close();
+                    } catch (Exception ignored) {
+                    }
+                    stats.get(DriverStatsKey.CONNECTIONS_CLOSED).incrementAndGet();
                 }
             }
             if (!borrowedToDelete.isEmpty()) {
@@ -1023,10 +1105,23 @@ public class PooledDriver extends DriverBase {
             }
 
             do {
-                if (getServerSelectionTimeout() <= 0) {
-                    bc = queue.poll(Integer.MAX_VALUE, TimeUnit.SECONDS);
-                } else {
-                    bc = queue.poll(getServerSelectionTimeout(), TimeUnit.MILLISECONDS);
+                // Poll in slices so we can abort early when the host gets evicted
+                // (dead primary during failover) instead of waiting the full
+                // serverSelectionTimeout on a host that will never deliver.
+                long deadline = getServerSelectionTimeout() <= 0
+                                ? Long.MAX_VALUE
+                                : System.currentTimeMillis() + getServerSelectionTimeout();
+
+                while ((bc = queue.poll(100, TimeUnit.MILLISECONDS)) == null) {
+                    if (!hosts.containsKey(host)) {
+                        throw new MorphiumDriverException("Host " + host + " was removed while waiting for a connection (failover?)");
+                    }
+                    if (!running) {
+                        throw new MorphiumDriverException("Driver is shutting down");
+                    }
+                    if (System.currentTimeMillis() >= deadline) {
+                        break;
+                    }
                 }
 
                 if (bc == null) {
@@ -1388,6 +1483,61 @@ public class PooledDriver extends DriverBase {
                 return;
             }
 
+            // NEVER pool a connection whose sent request still awaits its reply: the next
+            // borrower would read the predecessor's answer - THE source of the wire-desync
+            // family ("out of sync: expected reply to X, got Y", "Illegal opcode"). Whatever
+            // abandoned the request (interrupt, outer timeout between send and read) - the
+            // connection is poisoned, close it and let the pool create a fresh one.
+            if (con.hasPendingReplies()) {
+                String pending = "?";
+                boolean expectedAbandon = false;
+
+                if (con instanceof SingleMongoConnection smc) {
+                    pending = smc.pendingReplySummary();
+                    // a tailable/awaitData teardown legitimately walks away from its in-flight
+                    // getMore - close quietly; anything else is an abandoned reply worth a WARN
+                    expectedAbandon = smc.pendingRepliesAreOnlyGetMore();
+                }
+
+                if (expectedAbandon) {
+                    log.debug("Released connection to {} still awaits replies ({}) - closing instead of pooling",
+                        con.getConnectedTo(), pending);
+                } else {
+                    log.warn("Released connection to {} still awaits replies ({}) - closing instead of pooling",
+                        con.getConnectedTo(), pending);
+                }
+                stats.get(DriverStatsKey.CONNECTIONS_CLOSED).incrementAndGet();
+                markStatsDirty();
+
+                try {
+                    con.close();
+                } catch (Exception ignored) {
+                }
+
+                return;
+            }
+
+            // Don't pool connections that exceeded their lifetime (or idle time) while borrowed —
+            // pooling them parks already-expired connections until the heartbeat's expiry sweep
+            // runs, which lags behind under load. A borrow burst then keeps the pool far above
+            // its per-host minimum for seconds (the testLotsConnectionPool flaky). Closing on
+            // release matches what the official MongoDB drivers do.
+            long now = System.currentTimeMillis();
+
+            if (c.getCreated() < now - getMaxConnectionLifetime()
+                    || c.getLastUsed() < now - getMaxConnectionIdleTime()) {
+                log.debug("Connection to {} exceeded lifetime/idle time while borrowed - closing instead of pooling", con.getConnectedTo());
+                stats.get(DriverStatsKey.CONNECTIONS_CLOSED).incrementAndGet();
+                markStatsDirty();
+
+                try {
+                    con.close();
+                } catch (Exception ignored) {
+                }
+
+                return;
+            }
+
             // Return connection to the pool it currently belongs to (may differ from borrowedFrom after failover)
             if (con.getConnectedTo() != null) {
                 Host h = hosts.get(con.getConnectedTo());
@@ -1485,6 +1635,18 @@ public class PooledDriver extends DriverBase {
         }
 
         return false;
+    }
+
+    /**
+     * The last error seen while trying to establish a connection to any seed host, or
+     * {@code null} if none was seen. Populated on both the initial per-seed connect attempts in
+     * {@link #connect(String)} and every heartbeat reconnect attempt - so it reflects the most
+     * recent failure regardless of replicaset/single-host mode. A caller that finds
+     * {@link #isConnected()} still {@code false} after waiting can use this to report the real
+     * cause (e.g. a TLS handshake failure) instead of a bare "not connected" message.
+     */
+    public Throwable getLastConnectFailure() {
+        return lastConnectFailure;
     }
 
     @Override

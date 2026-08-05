@@ -73,9 +73,17 @@ public class Msg {
     private int priority = 1000;
     private Boolean exclusive = false;
 
-    //backward compatibility
-    @Deprecated
+    // backward compatibility only - replaced by the field {@code topic}
+    // (kept so that pre-6.x messages stored with "name" can still be read; see preStore/postLoad)
+    @Deprecated(since = "6.3", forRemoval = true)
     private String name;
+
+    /**
+     * TTL applied when the sender does not specify one. Also the reference point for the
+     * messaging fallback-poll cadence: the safety net polls at DEFAULT_TTL_MS / 3, so a
+     * message with this TTL gets roughly two rescue chances before it expires.
+     */
+    public static final long DEFAULT_TTL_MS = 30_000;
 
     public Msg() {
         // msgId = UUID.randomUUID().toString();
@@ -84,7 +92,7 @@ public class Msg {
     }
 
     public Msg(String topic, String msg, String value) {
-        this(topic, msg, value, 30000, false);
+        this(topic, msg, value, DEFAULT_TTL_MS, false);
     }
 
     public Msg(String topic, String msg, String value, long ttl) {
@@ -412,8 +420,10 @@ public class Msg {
 
         if (timingOut) {
             if (ttl == 0) {
+                // last resort for direct morphium.store users - the messaging send paths apply
+                // the configurable messagingDefaultTtl before this hook runs
                 LoggerFactory.getLogger(Msg.class).debug("Defaulting msg ttl to 30sec");
-                ttl = 30000;
+                ttl = DEFAULT_TTL_MS;
             }
 
             if (deleteAt == null) {
@@ -453,7 +463,16 @@ public class Msg {
         m.setInAnswerTo(this.msgId);
         //m.addRecipient(this.getSender());
         m.addRecipient(this.getSender());
-        m.setDeleteAt(new Date(System.currentTimeMillis() + m.getTtl()));
+
+        // Only derive deleteAt here when the answer carries an explicit TTL. With ttl still 0
+        // (plain new Msg()/new JMSMessage(), the JMS ack pattern) this used to produce
+        // deleteAt=NOW - the answer was stored already expired and the TTL sweeper raced the
+        // consumer's reread for it (the long-hunted BasicJMSTests flaky). Left null, the send
+        // path applies messagingDefaultTtl and preStore derives deleteAt AFTER that.
+        if (m.getTtl() > 0) {
+            m.setDeleteAt(new Date(System.currentTimeMillis() + m.getTtl()));
+        }
+
         m.setMsgId(new MorphiumId());
         messaging.sendMessage(m);
     }

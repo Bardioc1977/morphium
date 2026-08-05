@@ -4,9 +4,12 @@ import de.caluga.morphium.driver.DnsSrvResolver;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -149,32 +152,149 @@ public class DnsSrvResolverTest {
         assertThrows(Exception.class, () -> DnsSrvResolver.parseSrvRecords(tooShort));
     }
 
-    // ── systemDnsServers ──────────────────────────────────────────────────────
+    // ── parseTxtRecords / parseTxtOptions (issue #169) ─────────────────────────
 
-    @Test
-    void systemDnsServers_containsFallback() {
-        List<InetAddress> servers = DnsSrvResolver.systemDnsServers();
-        assertFalse(servers.isEmpty(), "Should always have at least the public fallback servers");
+    /**
+     * Builds a minimal TXT DNS response carrying a single character-string.
+     * Layout mirrors {@link #buildSingleSrvResponse}, but TYPE=16 (TXT) and the
+     * RDATA is a length-prefixed character-string (assumes value length &le; 255).
+     */
+    private static byte[] buildSingleTxtResponse(String qname, String txtValue) {
+        byte[] qnameEnc = DnsSrvResolver.encodeDnsName(qname);
+        byte[] txtBytes = txtValue.getBytes(StandardCharsets.US_ASCII);
+        int rdLen = 1 + txtBytes.length; // character-string length byte + content
 
-        boolean hasFallback = servers.stream()
-            .anyMatch(a -> a.getHostAddress().equals("8.8.8.8") || a.getHostAddress().equals("1.1.1.1"));
-        assertTrue(hasFallback, "Should contain 8.8.8.8 or 1.1.1.1 as fallback");
+        byte[] hdr = {
+            0x00, 0x01,        // ID
+            (byte)0x81, 0x00,  // QR=1 RD=1 RCODE=0
+            0x00, 0x01,        // QDCOUNT=1
+            0x00, 0x01,        // ANCOUNT=1
+            0x00, 0x00,        // NSCOUNT=0
+            0x00, 0x00         // ARCOUNT=0
+        };
+
+        byte[] question = new byte[qnameEnc.length + 4];
+        System.arraycopy(qnameEnc, 0, question, 0, qnameEnc.length);
+        question[qnameEnc.length]     = 0x00; question[qnameEnc.length + 1] = 0x10; // QTYPE=16 (TXT)
+        question[qnameEnc.length + 2] = 0x00; question[qnameEnc.length + 3] = 0x01; // QCLASS=1
+
+        byte[] answer = new byte[12 + rdLen];
+        answer[0] = (byte)0xC0; answer[1] = 0x0C;   // NAME: pointer to question name at offset 12
+        answer[2] = 0x00; answer[3] = 0x10;          // TYPE=16 (TXT)
+        answer[4] = 0x00; answer[5] = 0x01;          // CLASS=1 (IN)
+        answer[6] = 0x00; answer[7] = 0x00;
+        answer[8] = 0x00; answer[9] = (byte)0x2C;    // TTL
+        answer[10] = (byte)(rdLen >> 8);
+        answer[11] = (byte)(rdLen & 0xFF);            // RDLENGTH
+        answer[12] = (byte)txtBytes.length;           // character-string length
+        System.arraycopy(txtBytes, 0, answer, 13, txtBytes.length);
+
+        byte[] response = new byte[hdr.length + question.length + answer.length];
+        System.arraycopy(hdr,      0, response, 0,                            hdr.length);
+        System.arraycopy(question, 0, response, hdr.length,                   question.length);
+        System.arraycopy(answer,   0, response, hdr.length + question.length, answer.length);
+        return response;
     }
 
     @Test
-    void systemDnsServers_noExceptionOnWindows() {
-        String original = System.getProperty("os.name");
+    void parseTxtRecords_singleRecord() throws Exception {
+        byte[] response = buildSingleTxtResponse("cluster.example.com", "authSource=admin&replicaSet=myRS");
+
+        List<String> records = DnsSrvResolver.parseTxtRecords(response);
+
+        assertEquals(1, records.size());
+        assertEquals("authSource=admin&replicaSet=myRS", records.get(0));
+    }
+
+    @Test
+    void parseTxtRecords_emptyAnswer() throws Exception {
+        byte[] response = {
+            0x00, 0x01, (byte)0x81, 0x00,
+            0x00, 0x00,  // QDCOUNT=0
+            0x00, 0x00,  // ANCOUNT=0
+            0x00, 0x00, 0x00, 0x00
+        };
+
+        List<String> records = DnsSrvResolver.parseTxtRecords(response);
+        assertNotNull(records);
+        assertTrue(records.isEmpty());
+    }
+
+    @Test
+    void parseTxtOptions_lowercasesKeysKeepsValueCase() {
+        Map<String, String> opts = DnsSrvResolver.parseTxtOptions(List.of("authSource=admin&replicaSet=MyReplSet"));
+
+        assertEquals("admin", opts.get("authsource"), "option key lookup must be case-insensitive");
+        assertEquals("MyReplSet", opts.get("replicaset"), "replica-set name value must keep its case");
+    }
+
+    @Test
+    void parseTxtOptions_handlesEmptyAndMalformed() {
+        assertTrue(DnsSrvResolver.parseTxtOptions(List.of()).isEmpty());
+        assertTrue(DnsSrvResolver.parseTxtOptions(List.of("")).isEmpty());
+
+        Map<String, String> opts = DnsSrvResolver.parseTxtOptions(List.of("authSource=admin&garbage&=novalue"));
+        assertEquals("admin", opts.get("authsource"));
+        assertFalse(opts.containsKey(""), "empty key must be skipped");
+        assertEquals(1, opts.size(), "only well-formed key=value pairs are kept");
+    }
+
+    // ── systemDnsServers fallback behaviour (issue #170) ──────────────────────
+
+    private static final String NAMESERVER_PROP = "sun.net.spi.nameservice.nameservers";
+
+    private static boolean containsAddr(List<InetAddress> servers, String addr) {
+        return servers.stream().anyMatch(a -> a.getHostAddress().equals(addr));
+    }
+
+    @Test
+    void systemDnsServers_doesNotAddPublicFallback_whenSystemServersPresent() throws Exception {
+        String savedProp = System.getProperty(NAMESERVER_PROP);
+        File resolvConf = File.createTempFile("resolv", ".conf");
         try {
-            System.setProperty("os.name", "Windows 10");
-            // Must not throw even though /etc/resolv.conf does not exist on Windows
-            List<InetAddress> servers = assertDoesNotThrow(() -> DnsSrvResolver.systemDnsServers());
-            assertFalse(servers.isEmpty(), "Should still return public fallback servers on Windows");
+            System.clearProperty(NAMESERVER_PROP);
+            Files.writeString(resolvConf.toPath(), "nameserver 10.123.45.67\n");
+
+            List<InetAddress> servers = DnsSrvResolver.systemDnsServers(resolvConf);
+
+            assertTrue(containsAddr(servers, "10.123.45.67"), "configured system name-server should be present");
+            assertFalse(containsAddr(servers, "8.8.8.8"), "public DNS fallback must not be added when system servers exist (issue #170)");
+            assertFalse(containsAddr(servers, "1.1.1.1"), "public DNS fallback must not be added when system servers exist (issue #170)");
         } finally {
-            if (original != null) {
-                System.setProperty("os.name", original);
-            } else {
-                System.clearProperty("os.name");
-            }
+            //noinspection ResultOfMethodCallIgnored
+            resolvConf.delete();
+            restoreProp(savedProp);
+        }
+    }
+
+    @Test
+    void systemDnsServers_addsPublicFallback_whenNoSystemServers() throws Exception {
+        String savedProp = System.getProperty(NAMESERVER_PROP);
+        File missing = new File(File.createTempFile("resolv", ".conf").getAbsolutePath() + ".gone");
+        try {
+            System.clearProperty(NAMESERVER_PROP);
+            assertFalse(missing.exists(), "test precondition: resolv.conf must not exist");
+
+            List<InetAddress> servers = DnsSrvResolver.systemDnsServers(missing);
+
+            assertTrue(containsAddr(servers, "8.8.8.8"), "public DNS fallback should be used when no system servers are found");
+            assertTrue(containsAddr(servers, "1.1.1.1"), "public DNS fallback should be used when no system servers are found");
+        } finally {
+            restoreProp(savedProp);
+        }
+    }
+
+    @Test
+    void systemDnsServers_neverEmpty() {
+        // The public entry point must always yield at least one resolver to query.
+        assertFalse(DnsSrvResolver.systemDnsServers().isEmpty(), "must always return at least one DNS server to query");
+    }
+
+    private static void restoreProp(String savedProp) {
+        if (savedProp != null) {
+            System.setProperty(NAMESERVER_PROP, savedProp);
+        } else {
+            System.clearProperty(NAMESERVER_PROP);
         }
     }
 }

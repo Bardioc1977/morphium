@@ -16,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -28,6 +30,8 @@ public final class DnsSrvResolver {
     private static final Logger log = LoggerFactory.getLogger(DnsSrvResolver.class);
     private static final int DNS_SRV_PORT       = 53;
     private static final int DNS_SRV_TIMEOUT_MS = 5_000;
+    /** Public DNS resolvers used only as a last resort when no system name-servers are configured. */
+    private static final String[] PUBLIC_DNS_FALLBACK = {"8.8.8.8", "1.1.1.1"};
 
     private DnsSrvResolver() {}
 
@@ -71,8 +75,75 @@ public final class DnsSrvResolver {
         return Collections.emptyList();
     }
 
-    /** Collects name-server addresses from JVM properties, /etc/resolv.conf (non-Windows), and public fallbacks. */
+    /**
+     * Resolves TXT records for the given DNS name (used for MongoDB seedlist options).
+     * Per the DNS Seedlist Discovery spec the TXT record sits at the <em>bare</em> hostname
+     * (e.g. {@code cluster.mongodb.net}), not under the {@code _mongodb._tcp.} prefix.
+     * Returns the raw TXT strings; failures are swallowed and yield an empty list, since TXT
+     * options are optional defaults and must never block a connection.
+     *
+     * @param name the bare hostname, e.g. {@code cluster.mongodb.net}
+     * @return list of TXT record strings (never {@code null}, possibly empty)
+     */
+    public static List<String> resolveTxt(String name) {
+        List<InetAddress> servers;
+        try {
+            servers = systemDnsServers();
+        } catch (Exception ex) {
+            log.debug("No DNS servers available for TXT lookup of '{}': {}", name, ex.getMessage());
+            return Collections.emptyList();
+        }
+        for (InetAddress dns : servers) {
+            try {
+                byte[] query    = buildDnsQuery(name, 16 /* TXT */);
+                byte[] response = dnsOverUdp(dns, query);
+                if ((response[2] & 0x02) != 0) { // truncated → retry over TCP
+                    response = dnsOverTcp(dns, query);
+                }
+                List<String> records = parseTxtRecords(response);
+                if (!records.isEmpty()) {
+                    log.info("DNS server {} returned {} TXT record(s) for '{}'", dns.getHostAddress(), records.size(), name);
+                    return records;
+                }
+            } catch (Exception ex) {
+                log.debug("DNS server {} TXT lookup failed for '{}': {}", dns.getHostAddress(), name, ex.getMessage());
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Collects name-server addresses from JVM properties and {@code /etc/resolv.conf}, falling back to
+     * public DNS servers only when no system name-servers can be found.
+     */
     public static List<InetAddress> systemDnsServers() {
+        return systemDnsServers(new File("/etc/resolv.conf"));
+    }
+
+    /** Seam taking the resolv.conf location so the fallback logic is testable (consistent with the other public test seams in this class). */
+    public static List<InetAddress> systemDnsServers(File resolvConf) {
+        List<InetAddress> servers = collectConfiguredDnsServers(resolvConf);
+
+        if (servers.isEmpty()) {
+            // No system name-servers (e.g. minimal container without /etc/resolv.conf): use public DNS as a
+            // last resort. Doing this unconditionally breaks split-DNS/private-Atlas setups and causes a
+            // per-server timeout when outbound UDP/53 is firewalled (issue #170).
+            log.debug("No system DNS name-servers found; falling back to public DNS {}", Arrays.toString(PUBLIC_DNS_FALLBACK));
+            for (String addr : PUBLIC_DNS_FALLBACK) {
+                try { servers.add(InetAddress.getByName(addr)); } catch (Exception ignored) {}
+            }
+        }
+
+        if (log.isDebugEnabled()) {
+            List<String> addrs = new ArrayList<>(servers.size());
+            for (InetAddress s : servers) addrs.add(s.getHostAddress());
+            log.debug("System DNS servers: {}", addrs);
+        }
+        return servers;
+    }
+
+    /** Reads configured name-servers from the {@code sun.net.spi.nameservice.nameservers} property and resolv.conf. */
+    private static List<InetAddress> collectConfiguredDnsServers(File resolvConf) {
         List<InetAddress> servers = new ArrayList<>();
 
         String prop = System.getProperty("sun.net.spi.nameservice.nameservers");
@@ -82,31 +153,18 @@ public final class DnsSrvResolver {
             }
         }
 
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (!os.contains("win")) {
-            File resolvConf = new File("/etc/resolv.conf");
-            if (resolvConf.exists()) {
-                try (BufferedReader br = new BufferedReader(new FileReader(resolvConf))) {
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        line = line.trim();
-                        if (line.startsWith("nameserver ")) {
-                            String addr = line.substring("nameserver ".length()).trim();
-                            try { servers.add(InetAddress.getByName(addr)); } catch (Exception ignored) {}
-                        }
+        // resolv.conf only exists on Unix-like systems; the exists() check keeps this a no-op on Windows.
+        if (resolvConf != null && resolvConf.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(resolvConf))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("nameserver ")) {
+                        String addr = line.substring("nameserver ".length()).trim();
+                        try { servers.add(InetAddress.getByName(addr)); } catch (Exception ignored) {}
                     }
-                } catch (Exception ignored) {}
-            }
-        }
-
-        // Always add public fallbacks so Windows (and restricted environments) work reliably
-        try { servers.add(InetAddress.getByName("8.8.8.8")); } catch (Exception ignored) {}
-        try { servers.add(InetAddress.getByName("1.1.1.1")); } catch (Exception ignored) {}
-
-        if (log.isDebugEnabled()) {
-            List<String> addrs = new ArrayList<>(servers.size());
-            for (InetAddress s : servers) addrs.add(s.getHostAddress());
-            log.debug("System DNS servers: {}", addrs);
+                }
+            } catch (Exception ignored) {}
         }
         return servers;
     }
@@ -235,6 +293,77 @@ public final class DnsSrvResolver {
             offset += rdLength;
         }
         return results;
+    }
+
+    /**
+     * Parses a TXT DNS response and returns the decoded record strings.
+     * Each TXT record's RDATA is one or more length-prefixed character-strings, which are
+     * concatenated to form the full record value (per RFC 1035 §3.3.14).
+     */
+    public static List<String> parseTxtRecords(byte[] data) throws Exception {
+        if (data.length < 12) throw new Exception("DNS response too short (" + data.length + " bytes)");
+        int rcode = data[3] & 0x0F;
+        if (rcode != 0) throw new Exception("DNS RCODE=" + rcode + " error for TXT query");
+
+        int qdCount = dnsShort(data, 4);
+        int anCount = dnsShort(data, 6);
+        int offset  = 12;
+
+        for (int i = 0; i < qdCount && offset < data.length; i++) {
+            offset = dnsSkipName(data, offset) + 4; // +4 for QTYPE + QCLASS
+        }
+
+        List<String> results = new ArrayList<>();
+        for (int i = 0; i < anCount && offset + 10 <= data.length; i++) {
+            offset  = dnsSkipName(data, offset);
+            int type     = dnsShort(data, offset);
+            int rdLength = dnsShort(data, offset + 8);
+            offset += 10;
+
+            if (offset + rdLength > data.length) {
+                log.warn("DNS response: malformed TXT record at offset {}, rdLength={} exceeds data length {}", offset, rdLength, data.length);
+                break;
+            }
+
+            if (type == 16 /* TXT */) {
+                StringBuilder sb  = new StringBuilder();
+                int rd            = offset;
+                int rdEnd         = offset + rdLength;
+                while (rd < rdEnd) {
+                    int strLen = data[rd] & 0xFF;
+                    rd++;
+                    if (rd + strLen > rdEnd) break; // malformed character-string
+                    sb.append(new String(data, rd, strLen, StandardCharsets.UTF_8));
+                    rd += strLen;
+                }
+                results.add(sb.toString());
+            }
+            offset += rdLength;
+        }
+        return results;
+    }
+
+    /**
+     * Parses MongoDB seedlist TXT records (e.g. {@code "authSource=admin&replicaSet=myRS"}) into a
+     * map of options. Keys are lower-cased so look-ups are case-insensitive (as connection-string
+     * options are), while values keep their original case (e.g. replica-set names are case-sensitive).
+     * Malformed fragments without a {@code key=value} shape or with an empty key are skipped.
+     */
+    public static Map<String, String> parseTxtOptions(List<String> txtRecords) {
+        Map<String, String> options = new LinkedHashMap<>();
+        if (txtRecords == null) return options;
+        for (String record : txtRecords) {
+            if (record == null || record.isBlank()) continue;
+            for (String pair : record.split("&")) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) continue; // no '=' or empty key
+                String key   = pair.substring(0, eq).trim().toLowerCase();
+                String value = pair.substring(eq + 1).trim();
+                if (key.isEmpty()) continue;
+                options.put(key, value);
+            }
+        }
+        return options;
     }
 
     public static int dnsShort(byte[] data, int off) {

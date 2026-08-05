@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,6 +36,9 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
     private final String collectionName;
     private final boolean fullDocument;
     private final int maxWait;
+    // getMore batch size for the change stream cursor; defaults to the configured changeStreamBatchSize,
+    // can be overridden per monitor via setBatchSize() before start().
+    private int batchSize;
     private volatile boolean running = true;
     private Thread changeStreamThread;
     private final MorphiumObjectMapper mapper;
@@ -43,6 +47,7 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
     private MorphiumDriver dedicatedConnection;
     private final CountDownLatch watchStartedLatch = new CountDownLatch(1);
     private final AtomicBoolean watchStartedSignaled = new AtomicBoolean(false);
+    private final List<Runnable> watchEstablishedListeners = new CopyOnWriteArrayList<>();
     private volatile WatchCommand activeWatch;
     private volatile de.caluga.morphium.driver.wire.MongoConnection activeConnection;
     // Resume token tracking to prevent duplicate events on watch restart
@@ -97,9 +102,23 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
             this.maxWait = m.getConfig().connectionSettings().getMaxWaitTime();
         }
 
+        this.batchSize = m.getConfig().driverSettings().getChangeStreamBatchSize();
         mapper = new ObjectMapperImpl();
         AnnotationAndReflectionHelper hlp = new AnnotationAndReflectionHelper(false);
         mapper.setAnnotationHelper(hlp);
+    }
+
+    public int getBatchSize() {
+        return batchSize;
+    }
+
+    /**
+     * Override the change stream getMore batch size for this monitor. Must be called before {@link #start()}.
+     * Defaults to {@code driverSettings().getChangeStreamBatchSize()}.
+     */
+    public ChangeStreamMonitor setBatchSize(int batchSize) {
+        this.batchSize = batchSize;
+        return this;
     }
 
     public void addListener(ChangeStreamListener lst) {
@@ -207,7 +226,6 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
             //        try {
             //            Thread.sleep(100);
             //        } catch (InterruptedException e) {
-            //            // e.printStackTrace();
             //        }
 
             //        break;
@@ -225,6 +243,110 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
 
     public String getcollectionName() {
         return collectionName;
+    }
+
+    /**
+     * Decides how to react to an exception thrown by the watch loop.
+     * Returns true if the monitor should retry, false if it must terminate.
+     * package-private for testing.
+     */
+    boolean handleWatchError(Exception e) {
+        // Check if we should stop before handling errors
+        if (!running || morphium.getConfig() == null) {
+            log.debug("ChangeStreamMonitor stopping due to shutdown");
+            return false;
+        }
+
+        if (e.getMessage() == null) {
+            log.warn("Restarting changestream", e);
+            closeActiveConnectionQuietly();
+        } else if (e.getMessage().contains("reply is null")) {
+            // no reply although the server must answer within maxTimeMS - a late reply may
+            // still be in flight on this connection; pooling it would poison the next borrower
+            log.warn("Reply is null - cannot watch - closing connection and retrying");
+            closeActiveConnectionQuietly();
+        } else if (e.getMessage().contains("cursor is null")) {
+            // a full reply arrived but it was not a watch reply: this connection delivered
+            // someone else's (stale) answer - its stream state is unknown, do not pool it
+            log.warn("Cursor is null - cannot watch - closing connection and retrying");
+            closeActiveConnectionQuietly();
+        } else if (e.getMessage().contains("ChangeStreamHistoryLost") || e.getMessage().contains("resume point may no longer be in the oplog")) {
+            // Oplog has rolled past our resume point - discard token and start fresh
+            log.warn("Oplog rolled past resume point for changestream '{}' - discarding resume token and restarting fresh", collectionName);
+            lastResumeToken = null;
+            sleepBeforeRetry();
+        } else if (e.getMessage().contains("Network error error: state should be: open")) {
+            log.warn("Changstream connection broke - restarting");
+        } else if (e.getMessage().contains("Did not receive OpMsg-Reply in time") || e.getMessage().contains("Read timed out")) {
+            log.debug("changestream iteration");
+        } else if (e.getMessage().contains("closed")) {
+            // Connection closed is often transient (network issues, failover) - retry instead of giving up
+            log.warn("Connection closed for changestream '{}' - will retry", collectionName);
+            sleepBeforeRetry();
+        } else if (e.getMessage().contains("No such host")) {
+            // Thrown by the connection pool when the host was just evicted (e.g. dead
+            // primary during failover). The heartbeat re-adds replica set members, so
+            // this is transient - terminating here would kill messaging permanently.
+            log.warn("Host currently not available for changestream '{}' - will retry", collectionName);
+            sleepBeforeRetry();
+        } else {
+            if (!running) {
+                return false;
+            }
+            log.warn("Error in changestream monitor - restarting", e);
+            // unclassified error: the connection's stream state is unknown - close to be safe,
+            // the pool discards closed connections and creates a replacement
+            closeActiveConnectionQuietly();
+            sleepBeforeRetry();
+        }
+        return true;
+    }
+
+    /**
+     * Adopts the resume token the (possibly dead) watch published on its command. watch()
+     * updates the command's resumeAfter on every exit with its freshest token - including the
+     * postBatchResumeToken of empty batches, which is the ONLY token available to a consumer
+     * that never received an event. Since run() builds a new WatchCommand for every retry,
+     * skipping this adoption would restart such a consumer at "now" and silently lose every
+     * event written during the retry gap. package-private for testing.
+     */
+    void adoptResumeTokenFrom(de.caluga.morphium.driver.commands.WatchCommand watch) {
+        if (watch == null) {
+            return;
+        }
+        Map<String, Object> token = watch.getResumeAfter();
+        if (token != null) {
+            lastResumeToken = token;
+        }
+    }
+
+    /**
+     * Closes the connection the watch loop was using. Called for errors after which the
+     * connection's stream state is unknown (wrong/missing reply, unclassified failure):
+     * releasing such a connection back to the pool would hand a desynced stream to the
+     * next borrower (seen as "Illegal opcode" on unrelated commands). The pool discards
+     * closed connections on release and replaces them.
+     */
+    private void closeActiveConnectionQuietly() {
+        var con = activeConnection;
+        if (con != null) {
+            try {
+                con.close();
+            } catch (Exception ignore) {
+                // best effort - may already be closed
+            }
+        }
+    }
+
+    private void sleepBeforeRetry() {
+        if (morphium.getConfig() == null) {
+            return;
+        }
+        try {
+            Thread.sleep(morphium.getConfig().connectionSettings().getSleepBetweenNetworkErrorRetries());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
@@ -317,7 +439,7 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
                     continue;  // Retry connection
                 }
 
-                watch = new WatchCommand(con).setCb(callback).setDb(morphium.getDatabase()).setBatchSize(1).setMaxTimeMS(maxWait)
+                watch = new WatchCommand(con).setCb(callback).setDb(morphium.getDatabase()).setBatchSize(batchSize).setMaxTimeMS(maxWait)
                 .setFullDocument(fullDocument ? WatchCommand.FullDocumentEnum.updateLookup : WatchCommand.FullDocumentEnum.defaultValue).setPipeline(pipeline);
 
                 // Use resume token to continue from where we left off (prevents duplicate events)
@@ -341,59 +463,12 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
                     // log.info("CSM: watch() returned normally for collection '{}'", collectionName);
                 }
             } catch (Exception e) {
-                // Check if we should stop before handling errors
-                if (!running || morphium.getConfig() == null) {
-                    log.debug("ChangeStreamMonitor stopping due to shutdown");
+                if (!handleWatchError(e)) {
                     break;
-                }
-
-                if (e.getMessage() == null) {
-                    log.warn("Restarting changestream", e);
-                } else if (e.getMessage().contains("reply is null")) {
-                    log.warn("Reply is null - cannot watch - retrying");
-                } else if (e.getMessage().contains("cursor is null")) {
-                    log.warn("Cursor is null - cannot watch - retrying");
-                } else if (e.getMessage().contains("ChangeStreamHistoryLost") || e.getMessage().contains("resume point may no longer be in the oplog")) {
-                    // Oplog has rolled past our resume point - discard token and start fresh
-                    log.warn("Oplog rolled past resume point for changestream '{}' - discarding resume token and restarting fresh", collectionName);
-                    lastResumeToken = null;
-                    try {
-                        Thread.sleep(morphium.getConfig().connectionSettings().getSleepBetweenNetworkErrorRetries());
-                    } catch (InterruptedException ex) {
-                        if (!running) break;
-                    }
-                } else if (e.getMessage().contains("Network error error: state should be: open")) {
-                    log.warn("Changstream connection broke - restarting");
-                } else if (e.getMessage().contains("Did not receive OpMsg-Reply in time") || e.getMessage().contains("Read timed out")) {
-                    log.debug("changestream iteration");
-                } else if (morphium.getConfig() == null) {
-                    log.warn("Morphium config is null, stopping changestream monitor for '{}'", collectionName);
-                    break;
-                } else if (e.getMessage().contains("closed")) {
-                    // Connection closed is often transient (network issues, failover) - retry instead of giving up
-                    log.warn("Connection closed for changestream '{}' - will retry", collectionName);
-                    try {
-                        Thread.sleep(morphium.getConfig().connectionSettings().getSleepBetweenNetworkErrorRetries());
-                    } catch (InterruptedException ex) {
-                        if (!running) break;
-                    }
-                } else if (e.getMessage().contains("No such host")) {
-                    // Server was shut down, stop trying to reconnect
-                    log.warn("Server no longer available (No such host), stopping changestream monitor for collection '{}'", collectionName);
-                    break;
-                } else {
-                    if (running) {
-                        log.warn("Error in changestream monitor - restarting", e);
-
-                        try {
-                            Thread.sleep(morphium.getConfig().connectionSettings().getSleepBetweenNetworkErrorRetries());
-                        } catch (InterruptedException ex) {
-                        }
-                    } else {
-                        break;
-                    }
                 }
             } finally {
+                // the dying watch may know a fresher resume token than our event callbacks do
+                adoptResumeTokenFrom(watch);
                 boolean connectionReleased = false;
                 if (watch != null && watch.getConnection() != null) {
                     watch.releaseConnection();
@@ -426,6 +501,57 @@ public class ChangeStreamMonitor implements Runnable, ShutdownListener {
         if (watchStartedSignaled.compareAndSet(false, true)) {
             watchStartedLatch.countDown();
         }
+
+        // Notify on EVERY (re-)establishment, not just the first: consumers like messaging
+        // use this to poll for documents written while the stream was down - the change
+        // stream itself cannot deliver those when no resume token was available.
+        if (running) {
+            for (Runnable r : watchEstablishedListeners) {
+                try {
+                    r.run();
+                } catch (Exception e) {
+                    log.warn("watch-established listener failed", e);
+                }
+            }
+        }
+    }
+
+    // Client-side grace on top of maxWait before a silent stream counts as suspect -
+    // mirrors the read grace the watch loop itself grants (WATCH_READ_GRACE_MS).
+    private static final long LIVENESS_GRACE_MS = 10_000;
+
+    /**
+     * Whether the change stream is provably alive and in sync: the watch loop receives a
+     * server reply at least every maxTimeMS (an empty batch when there are no events) and
+     * stamps its time on the WatchCommand. A fresh stamp means events cannot silently be
+     * missing - the resume token advances with every batch. No active watch, no reply yet,
+     * or a stale stamp all count as NOT live, so consumers (e.g. the messaging fallback
+     * poll) fall back to polling exactly when the stream cannot vouch for itself.
+     */
+    public boolean isStreamLive() {
+        WatchCommand watch = activeWatch;
+
+        if (watch == null) {
+            return false;
+        }
+
+        long last = watch.getLastReplyAt();
+
+        if (last <= 0) {
+            return false;
+        }
+
+        return System.currentTimeMillis() - last <= maxWait + LIVENESS_GRACE_MS;
+    }
+
+    /**
+     * Registers a callback invoked every time the change stream watch is (re-)established,
+     * including after connection loss and retry. Unlike {@link #awaitReady}, this fires on
+     * every establishment - use it to catch up on events that occurred while the stream
+     * was down (e.g. by polling the collection once).
+     */
+    public void addWatchEstablishedListener(Runnable listener) {
+        watchEstablishedListeners.add(listener);
     }
 
     @Override

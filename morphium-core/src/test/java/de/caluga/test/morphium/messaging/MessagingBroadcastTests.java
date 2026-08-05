@@ -44,6 +44,7 @@ public class MessagingBroadcastTests extends MultiDriverTestBase {
 
 
                 try (Morphium m = new Morphium(cfg)) {
+                    m.dropCollection(Msg.class);
                     // wait until a primary connection is available to avoid race conditions on startup
                     // Important: always release the acquired connection back to the pool
                     de.caluga.test.mongo.suite.base.TestUtils.waitForConditionToBecomeTrue(10000, "No primary node found", () -> {
@@ -170,6 +171,7 @@ public class MessagingBroadcastTests extends MultiDriverTestBase {
 
                 final AtomicInteger errorCount = new AtomicInteger();
                 try (Morphium morph = new Morphium(cfg)) {
+                    morph.dropCollection(Msg.class);
                     String method = new Object() {
                     }
                     .getClass().getEnclosingMethod().getName();
@@ -194,7 +196,10 @@ public class MessagingBroadcastTests extends MultiDriverTestBase {
                                     log.error("Duplicate processing by {} using Messaging {}/{}! Message: {}, processed_by: {}",
                                               rec1.getSenderId(), morphium.getDriver().getName(), msgImpl, incoming.getMsgId(), incoming.getProcessedBy());
                                     errorCount.incrementAndGet();
-                                } else if (incoming.isExclusive() && incoming.getProcessedBy() != null && incoming.getProcessedBy().size() != 0) {
+                                } else if (incoming.isExclusive() && incoming.getProcessedBy() != null
+                                           && incoming.getProcessedBy().stream().anyMatch(p -> !p.equals(rec1.getSenderId()))) {
+                                    // exclusive messages are marked processed_by BEFORE onMessage (exactly-once hardening),
+                                    // so our own id is expected here - only a FOREIGN id means duplicate processing
                                     log.error("Duplicate processing Exclusive Message by {} using Messaging {}! Message: {}",
                                               rec1.getSenderId(), morphium.getDriver().getName(), msgImpl, incoming.getMsgId());
                                     errorCount.incrementAndGet();

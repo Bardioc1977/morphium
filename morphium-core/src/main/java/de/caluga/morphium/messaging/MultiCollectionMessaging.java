@@ -96,15 +96,18 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
     private String senderId;
 
     private Map<String, AtomicInteger> pollTrigger = new ConcurrentHashMap<>();
-    private final AtomicInteger fallbackPollCounter = new AtomicInteger(0);
     // track when a topic was paused, to report elapsed pause time on unpause
     private final Map<String, Long> pausedAt = new ConcurrentHashMap<>();
-    // Fallback poll runs every FALLBACK_POLL_INTERVAL_MS instead of every pause cycle
-    private static final long FALLBACK_POLL_INTERVAL_MS = 1000; // 1 second — faster recovery after lock release
-    private volatile long lastFallbackPollTime = 0;
+    // Liveness-gated safety net: per-topic timestamp of the last fallback poll, and whether
+    // the topic's streams were live at the previous check (a live->silent transition
+    // triggers an immediate poll instead of waiting out the interval).
+    private final Map<String, Long> fallbackLastPoll = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> fallbackStreamWasLive = new ConcurrentHashMap<>();
 
     private ScheduledThreadPoolExecutor decouplePool;
     private MessagingRegistry networkRegistry;
+    // Mongo field name of Msg.processedBy ("processed_by"), resolved once via the object mapper in init()
+    private String processedByFieldName;
 
     // Ready signaling for tests - latch is counted down when change streams are fully initialized
     private final CountDownLatch readyLatch = new CountDownLatch(1);
@@ -193,13 +196,31 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
                 }
             }
             // Safety-net fallback polling when change streams are enabled.
-            // Primary message delivery is via change streams; lock releases trigger targeted re-polls
-            // via the shared lock monitor. This fallback only catches edge cases (network glitches, etc.).
-            if (isUseChangeStream() && running.get() && (fallbackPollCounter.incrementAndGet() % 500 == 0)) {
-                // log.debug("Running fallback poll for {} topics", monitorsByTopic.size());
+            // The regular interval poll must ALWAYS run, even while streams are provably live:
+            // messages can (re-)appear without any matching stream event - e.g. requeueing by
+            // clearing processedBy via a plain DB update (the pipelines match insert /
+            // lock_released only) - and must be found within the poll interval, before their
+            // TTL expires. Stream liveness (heartbeat stamped on every watch reply) only ADDS
+            // urgency: a stream falling silent is polled IMMEDIATELY instead of on the timer.
+            if (isUseChangeStream() && running.get()) {
+                long fallbackNow = System.currentTimeMillis();
+
                 for (var topicName : monitorsByTopic.keySet()) {
                     try {
-                        pollAndProcess(topicName);
+                        boolean live = topicStreamsLive(topicName);
+                        boolean wasLive = Boolean.TRUE.equals(fallbackStreamWasLive.put(topicName, live));
+                        boolean justTurnedSuspect = wasLive && !live;
+                        Long lastPoll = fallbackLastPoll.get(topicName);
+
+                        if (justTurnedSuspect || lastPoll == null
+                                || fallbackNow - lastPoll >= effectiveSettings.getMessagingFallbackPollInterval()) {
+                            fallbackLastPoll.put(topicName, fallbackNow);
+                            int rescued = pollAndProcess(topicName);
+
+                            if (rescued > 0 && !live) {
+                                log.info("Fallback poll picked up {} message(s) for topic '{}' while its change stream was silent", rescued, topicName);
+                            }
+                        }
                     } catch (Exception e) {
                         log.debug("Error in fallback poll for topic {}", topicName, e);
                     }
@@ -236,6 +257,11 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
                                                  .of(Doc.of("$match", Doc.of("operationType", Doc.of("$eq", "insert"))));
             directMessagesMonitor = new ChangeStreamMonitor(morphium, dmCollectionName, true,
                 morphium.getConfig().connectionSettings().getMaxWaitTime(), pipeline);
+            // catch up on DMs (incl. answers) inserted while the stream was down
+            directMessagesMonitor.addWatchEstablishedListener(() -> {
+                pollTrigger.putIfAbsent("dm_all", new AtomicInteger(0));
+                pollTrigger.get("dm_all").incrementAndGet();
+            });
             directMessagesMonitor.addListener((evt) -> {
                 // Skip processing if not running - but always return true to keep listener registered
                 if (!running.get()) {
@@ -455,7 +481,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         long sum = 0;
         for (var msgName : monitorsByTopic.keySet()) {
             Query<Msg> q1 = morphium.createQueryFor(Msg.class, getCollectionName(msgName));
-            q1.f(Msg.Fields.sender).ne(getSenderId()).f("processed_by.0").notExists();
+            q1.f(Msg.Fields.sender).ne(getSenderId()).f(processedByFieldName + ".0").notExists();
             sum += q1.countAll();
         }
         return sum;
@@ -610,12 +636,23 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
 
         if (null != answersForMessage) {
             // we're expecting this message!
-            updateProcessedBy(m);
+            // Deliver BEFORE persisting the processed_by mark: that write is majority-acked
+            // on real MongoDB (easily 10ms+ per call) and the blocked sendAndAwait* caller
+            // must not pay for it. handleAnswer also runs directly on the DM change stream
+            // listener thread, so the write used to stall every subsequent DM event too.
+            // The local object is marked first so the delivered answer carries consistent
+            // metadata; duplicate delivery stays guarded by the answersForMessage.contains
+            // check, exactly as before.
+            String senderId = getSenderId();
+            if (senderId != null && !m.getProcessedBy().contains(senderId)) {
+                m.getProcessedBy().add(senderId);
+            }
 
             if (!answersForMessage.contains(m)) {
                 answersForMessage.add(m);
             }
 
+            persistProcessedByMark(m);
             checkDeleteAfterProcessing(m);
             return;
         }
@@ -629,9 +666,16 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             AsyncMessageCallback cb = cbr.callback;
             Runnable cbRunnable = () -> {
                 cb.incomingMessage(theMessage);
-                waitingForCallbacks.remove(m.getInAnswerTo());
             };
             queueOrRun(cbRunnable);
+
+            // Only exclusive requests are done after one answer; broadcasts keep the callback
+            // registered so every responder's answer is delivered (matches SingleCollectionMessaging
+            // and the sendAndAwaitAsync javadoc). The scheduled cleanup in sendAndAwaitAsync
+            // removes the entry after timeoutInMs either way.
+            if (cbr.theMessage.isExclusive()) {
+                waitingForCallbacks.remove(m.getInAnswerTo());
+            }
         } else {
             // an answer, but no one is waiting for it
             processMessage(theMessage);
@@ -774,8 +818,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
 
     @SuppressWarnings("unchecked")
     private void pollAndProcessDms(String name) {
-        // Use stored field name explicitly for inMem parity (processed_by is persisted in snake_case)
-        var q = morphium.createQueryFor(Msg.class, getDMCollectionName()).f("processed_by.0").notExists() // not processed
+        var q = morphium.createQueryFor(Msg.class, getDMCollectionName()).f(processedByFieldName + ".0").notExists() // not processed
                 .f(Msg.Fields.topic).nin(getPausedTopics())
                 .f(Msg.Fields.topic).eq(name).f(Msg.Fields.msgId).nin(new ArrayList(processingMessages));
         int window = getWindowSize();
@@ -817,7 +860,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         // Query for unprocessed messages in DM collection
         // Exclude messages already being processed or recently completed
         var q = morphium.createQueryFor(Msg.class, dmCollectionName)
-                .f("processed_by.0").notExists() // not processed
+                .f(processedByFieldName + ".0").notExists() // not processed
                 .f(Msg.Fields.msgId).nin(new ArrayList<>(processingMessages));
 
         int window = getWindowSize();
@@ -871,16 +914,42 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         }
     }
 
-    private void pollAndProcess(String msgName) {
+    /**
+     * A topic's delivery is provably healthy only if EVERY change stream monitor subscribed
+     * to it reports a fresh server-reply heartbeat - one silent stream means one listener
+     * that may be missing messages, and the fallback poll delivers to all of them.
+     * No monitors (yet) counts as not live, so callers poll conservatively.
+     * Public also for diagnostics/monitoring.
+     */
+    public boolean topicStreamsLive(String topicName) {
+        List<Map<MType, Object>> entries = monitorsByTopic.get(topicName);
+
+        if (entries == null || entries.isEmpty()) {
+            return false;
+        }
+
+        for (var entry : new ArrayList<>(entries)) {
+            var cm = (ChangeStreamMonitor) entry.get(MType.monitor);
+
+            if (cm == null || !cm.isStreamLive()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return number of messages picked up (dispatched or answered) by this poll */
+    private int pollAndProcess(String msgName) {
         if (!running.get())
-            return;
+            return 0;
         // log.debug("PollAndProcess for topic {} - processingMessages: {}", msgName, processingMessages.size());
         // Use more efficient query patterns
         List<MorphiumId> processingIds = new ArrayList<>(processingMessages);
 
         Query<Msg> q1 = morphium.createQueryFor(Msg.class, getCollectionName(msgName));
         q1.f(Msg.Fields.exclusive).eq(true) // exclusive message
-          .f("processed_by.0").notExists() // not processed yet (more efficient than eq(null))
+          .f(processedByFieldName + ".0").notExists() // not processed yet (more efficient than eq(null))
           .f(Msg.Fields.sender).ne(getSenderId()); // not sent by me
         if (!processingIds.isEmpty()) {
             q1.f(Msg.Fields.msgId).nin(processingIds); // not processed by me
@@ -888,8 +957,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
 
         Query<Msg> q2 = morphium.createQueryFor(Msg.class, getCollectionName(msgName));
         q2.f(Msg.Fields.exclusive).eq(false) // non-exclusive message
-          // Use stored field name explicitly for inMem parity (processed_by is persisted in snake_case)
-          .f("processed_by").ne(getSenderId()) // not processed by me
+          .f(processedByFieldName).ne(getSenderId()) // not processed by me
           .f(Msg.Fields.sender).ne(getSenderId()); // not sent by me
         if (!processingIds.isEmpty()) {
             q2.f(Msg.Fields.msgId).nin(processingIds); // not processing already
@@ -901,7 +969,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         int window = getWindowSize();
         q.limit(window + 1);
         if (!running.get())
-            return;
+            return 0;
         int seen = 0;
         boolean more = false;
         for (Msg m : q.asIterable(window + 1)) {
@@ -992,6 +1060,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             pollTrigger.get(msgName).incrementAndGet();
         }
 
+        return seen;
     }
 
     private boolean checkDeleteAfterProcessing(Msg message) {
@@ -1093,6 +1162,48 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         return getCollectionName(msg);
     }
 
+    /**
+     * DB-only companion to updateProcessedBy for the answer fast path: the local Msg object has
+     * already been marked (so the delivered answer carries consistent metadata) and only the
+     * $addToSet write remains. Deliberately no local-contains shortcut - the local list was just
+     * mutated, the write must still be attempted. $addToSet is idempotent, so a concurrent mark
+     * or an already-deleted message (deleteAfterProcessing race) is harmless.
+     */
+    private void persistProcessedByMark(Msg msg) {
+        String id = getSenderId();
+        if (msg == null || id == null) {
+            return;
+        }
+
+        Object queryId = msg.getMsgId();
+        if (queryId instanceof MorphiumId) {
+            queryId = new org.bson.types.ObjectId(((MorphiumId) queryId).getBytes());
+        }
+        String collName = getStorageCollectionNameForMessage(msg);
+        Query<Msg> idq = morphium.createQueryFor(Msg.class, collName);
+        idq.f("_id").eq(queryId);
+        UpdateMongoCommand cmd = null;
+
+        try {
+            cmd = new UpdateMongoCommand(
+                            morphium.getDriver().getPrimaryConnection(getMorphium().getWriteConcernForClass(Msg.class)));
+            cmd.setColl(collName).setDb(morphium.getDatabase());
+            cmd.addUpdate(idq.toQueryObject(), Doc.of("$addToSet", Doc.of(processedByFieldName, id)),
+                          null, false, false, null, null, null);
+            if (!running.get())
+                return; // this happens during tests mainly
+            cmd.execute();
+            cmd.releaseConnection();
+            cmd = null;
+        } catch (MorphiumDriverException e) {
+            log.error("Error persisting processed_by mark for answer " + msg.getMsgId(), e);
+        } finally {
+            if (cmd != null) {
+                cmd.releaseConnection();
+            }
+        }
+    }
+
     private void updateProcessedBy(Msg msg) {
         if (msg == null) {
             return;
@@ -1115,7 +1226,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         Query<Msg> idq = morphium.createQueryFor(Msg.class, collName);
         idq.f("_id").eq(queryId);
         Map<String, Object> qobj = idq.toQueryObject();
-        Map<String, Object> set = Doc.of("processed_by", id);
+        Map<String, Object> set = Doc.of(processedByFieldName, id);
         Map<String, Object> update = Doc.of("$addToSet", set);
         UpdateMongoCommand cmd = null;
 
@@ -1256,11 +1367,25 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         // a lock is deleted, so we can re-poll for exclusive messages without a separate connection)
         in.put("$in", Arrays.asList("insert", "lock_released"));
         match.put("operationType", in);
+        // Also accept REQUEUE updates: clearing processedBy via a plain DB update makes a
+        // message pending again but produces no insert event. The requeue signature is
+        // updateDescription.updatedFields.processed_by set to an EMPTY array ($size 0) -
+        // normal processing marks use positional keys (processed_by.0, ...) and stay filtered.
+        Map<String, Object> requeue = new LinkedHashMap<>();
+        requeue.put("operationType", "update");
+        requeue.put("updateDescription.updatedFields." + processedByFieldName, UtilsMap.of("$size", 0));
         var pipeline = new ArrayList<Map<String, Object>>();
-        pipeline.add(UtilsMap.of("$match", match));
+        pipeline.add(UtilsMap.of("$match", UtilsMap.of("$or", Arrays.asList(match, requeue))));
         ChangeStreamMonitor cm = new ChangeStreamMonitor(morphium, getCollectionName(n), false,
             effectiveSettings.getMessagingPollPause(),
             pipeline);
+        // Whenever the watch is (re-)established, poll once: messages inserted while the
+        // stream was down are invisible to the new stream (it starts at "now" unless a resume
+        // token was available) - without this, they wait for the coarse fallback poll.
+        cm.addWatchEstablishedListener(() -> {
+            pollTrigger.putIfAbsent(n, new AtomicInteger(0));
+            pollTrigger.get(n).incrementAndGet();
+        });
         cm.addListener((evt) -> {
             // CRITICAL: Always return true to keep the listener registered
             if (!running.get()) {
@@ -1271,6 +1396,15 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             // Trigger a re-poll so exclusive messages can be picked up by another subscriber.
             if ("lock_released".equals(evt.getOperationType())) {
                 log.debug("CSM: Lock released event for topic {}, triggering re-poll", n);
+                pollTrigger.putIfAbsent(n, new AtomicInteger(0));
+                pollTrigger.get(n).incrementAndGet();
+                return true;
+            }
+
+            // Requeue update (processedBy cleared, see pipeline): the message is pending again
+            // but there is no fullDocument here - trigger a poll to pick it up.
+            if ("update".equals(evt.getOperationType())) {
+                log.debug("CSM: Requeue update event for topic {}, triggering re-poll", n);
                 pollTrigger.putIfAbsent(n, new AtomicInteger(0));
                 pollTrigger.get(n).incrementAndGet();
                 return true;
@@ -1322,6 +1456,12 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             log.info("CSM: Queueing message {} for processing", doc.getMsgId());
 
             Runnable r = () -> {
+                // Only set when the message was actually handed to the listener. Early skips
+                // (already processed by someone else, lock lost, reread failed) must NOT mark
+                // the message "recently completed" - that would make polls ignore it for
+                // RECENTLY_COMPLETED_RETENTION_MS and break requeueing (processedBy cleared
+                // externally while the skip-marker is still active).
+                boolean handledHere = false;
                 try {
                     log.info("CSM-PROC: Starting processing of message {}", doc.getMsgId());
                     // Message already added to processingMessages above
@@ -1371,6 +1511,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
                             updateProcessedBy(current);
                         }
                         var ret = l.onMessage(this, current);
+                        handledHere = true;
                         if (!running.get())
                             return;
                         if (ret == null && effectiveSettings.isAutoAnswer()) {
@@ -1410,9 +1551,12 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
                     log.error("Error during change event processing", e);
                 } finally {
                     // CRITICAL: Remove from processingMessages in ALL code paths
-                    // This must be in the outer finally to catch early returns
-                    // Move to recentlyCompletedMessages before removing to prevent race conditions
-                    recentlyCompletedMessages.put(doc.getMsgId(), System.currentTimeMillis());
+                    // This must be in the outer finally to catch early returns.
+                    // Only messages that actually reached a listener count as "recently
+                    // completed" - skipped ones must stay findable for polls (requeue!).
+                    if (handledHere) {
+                        recentlyCompletedMessages.put(doc.getMsgId(), System.currentTimeMillis());
+                    }
                     processingMessages.remove(doc.getMsgId());
                 }
             };
@@ -1446,6 +1590,14 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             Doc.of("$match", Doc.of("operationType", Doc.of("$eq", "delete")))
         );
         sharedLockMonitor = new ChangeStreamMonitor(morphium, pipeline);
+        // a lock release deleted while this stream was down would never trigger its re-poll -
+        // on every (re-)establishment, re-poll all subscribed topics once to close the gap
+        sharedLockMonitor.addWatchEstablishedListener(() -> {
+            for (var topicName : monitorsByTopic.keySet()) {
+                pollTrigger.putIfAbsent(topicName, new AtomicInteger(0));
+                pollTrigger.get(topicName).incrementAndGet();
+            }
+        });
         sharedLockMonitor.addListener((evt) -> {
             if (!running.get()) return true;
 
@@ -1658,6 +1810,12 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
 
         m.setSenderHost(hostname);
         m.setSender(getSenderId());
+
+        // apply the configured default TTL (Msg.preStore would fall back to the hardcoded 30s)
+        if (m.isTimingOut() && m.getTtl() <= 0) {
+            m.setTtl(effectiveSettings.getMessagingDefaultTtl());
+        }
+
         if (m.getRecipients() == null || m.getRecipients().isEmpty()) {
             try {
                 if (async) {
@@ -1757,13 +1915,13 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
                 Query<Msg> q1 = morphium.createQueryFor(Msg.class, getCollectionName(msgName));
                 // pending = not processed by anyone (exclusive) or not processed by me
                 // (broadcast)
-                q1.f(Msg.Fields.sender).ne(getSenderId()).f("processed_by.0").notExists();
+                q1.f(Msg.Fields.sender).ne(getSenderId()).f(processedByFieldName + ".0").notExists();
                 total += q1.countAll();
             }
 
             // Include direct messages for this node in its DM collection
             Query<Msg> qdm = morphium.createQueryFor(Msg.class, getDMCollectionName());
-            qdm.f(Msg.Fields.sender).ne(getSenderId()).f("processed_by.0").notExists();
+            qdm.f(Msg.Fields.sender).ne(getSenderId()).f(processedByFieldName + ".0").notExists();
             total += qdm.countAll();
         } catch (Exception e) {
             log.warn("Error calculating number of messages", e);
@@ -1800,6 +1958,39 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
         return this;
     }
 
+    /**
+     * Failure-path-only diagnostics for the recurring answer-timeout flakies (BasicJMSTests
+     * et al., 2026-07-21): query the collection state once and name the failing stage -
+     * request never processed (delivery/processing), processed without an answer (answer
+     * never sent), or answer stored in this instance's DM collection but not delivered
+     * back (answer delivery).
+     */
+    private void logAnswerTimeoutDiagnostics(Msg theMessage, long timeoutInMs) {
+        try {
+            Msg orig = morphium.createQueryFor(Msg.class, getCollectionName(theMessage))
+                .f("_id").eq(theMessage.getMsgId()).get();
+            long answers = morphium.createQueryFor(Msg.class, getDMCollectionName())
+                .f(Msg.Fields.inAnswerTo).eq(theMessage.getMsgId()).countAll();
+            String verdict;
+
+            if (answers > 0) {
+                verdict = "answer(s) stored in my DM collection but not delivered back (answer delivery failed)";
+            } else if (orig == null) {
+                verdict = "request gone (deleted/expired) and no answer stored";
+            } else if (orig.getProcessedBy() == null || orig.getProcessedBy().isEmpty()) {
+                verdict = "request still unprocessed (delivery to/processing by the consumer failed)";
+            } else {
+                verdict = "request processed by " + orig.getProcessedBy() + " but no answer stored (answer never sent)";
+            }
+
+            log.error("answer timeout diagnostics for {}/{} after {}ms (instance {}): request={}, answers stored={} -> {}",
+                theMessage.getTopic(), theMessage.getMsgId(), timeoutInMs, getSenderId(),
+                orig == null ? "GONE" : "present, processedBy=" + orig.getProcessedBy(), answers, verdict);
+        } catch (Exception e) {
+            log.error("answer timeout diagnostics failed", e);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     public <T extends Msg> T sendAndAwaitFirstAnswer(T theMessage, long timeoutInMs, boolean throwExceptionOnTimeout) {
@@ -1818,9 +2009,13 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
             sendMessage(theMessage);
             T firstAnswer = (T) blockingQueue.poll(timeoutInMs, TimeUnit.MILLISECONDS);
 
-            if (null == firstAnswer && throwExceptionOnTimeout) {
-                throw new MessageTimeoutException("Did not receive answer for message " + theMessage.getTopic() + "/"
-                                                  + requestMsgId + " in time (" + timeoutInMs + "ms)");
+            if (null == firstAnswer) {
+                logAnswerTimeoutDiagnostics(theMessage, timeoutInMs);
+
+                if (throwExceptionOnTimeout) {
+                    throw new MessageTimeoutException("Did not receive answer for message " + theMessage.getTopic() + "/"
+                                                      + requestMsgId + " in time (" + timeoutInMs + "ms)");
+                }
             }
 
             return firstAnswer;
@@ -1867,6 +2062,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
 
                 // Did not receive any message in time
                 if (throwExceptionOnTimeout && System.currentTimeMillis() - start > timeout && (answerList.isEmpty())) {
+                    logAnswerTimeoutDiagnostics(theMessage, timeout);
                     throw new MessageTimeoutException("Did not receive any answer for message " + theMessage.getTopic()
                                                       + "/" + requestMsgId + "in time (" + timeout + ")");
                 }
@@ -2014,6 +2210,7 @@ public class MultiCollectionMessaging implements MorphiumMessaging {
     @Override
     public void init(Morphium m, MessagingSettings overrides) {
         morphium = m;
+        processedByFieldName = morphium.getARHelper().getMongoFieldName(Msg.class, Msg.Fields.processedBy.name());
 
         if (overrides == m.getConfig().messagingSettings()) {
             // create copy of settings, if same as morphiums
