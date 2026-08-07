@@ -975,8 +975,18 @@ public class ReplicationManager {
                             // leaves the local state partially wiped, and a later retry must not
                             // run the consistency shortcut against that.
                             wipedThisSyncCycle.set(true);
-                            clearLocalDatabases();
-                            performInitialSync();
+                            // Initial-sync writes are never observable via the local change
+                            // stream (MongoDB: initial sync is not oplogged). Without this, the
+                            // wipe below is broadcast as live "drop" events - and during a
+                            // leadership transition the other nodes' still-running OLD
+                            // ReplicationManagers (watching this demoted ex-primary) apply those
+                            // drops to their own data, destroying admin.system.users
+                            // cluster-wide (the StepdownReplicationTest flake: even the freshly
+                            // promoted primary applied the demoted node's wipe-drop).
+                            try (var ignored = localDriver.suppressChangeStreamEvents()) {
+                                clearLocalDatabases();
+                                performInitialSync();
+                            }
                         }
 
                         // Guard: if the watch died or was re-established during the copy (or the
@@ -1047,6 +1057,20 @@ public class ReplicationManager {
      */
     boolean isWatchLive() {
         return watchLive.get();
+    }
+
+    /**
+     * True once the change-stream watch has registered with the primary AT LEAST ONCE since
+     * {@link #start()} ({@code watchGeneration} only ever advances, one bump per registration).
+     * This - not the instantaneous {@link #isWatchLive()} - is what PoppyDB's one-shot
+     * post-start liveness probe must check: {@code watchLive} deliberately drops to false in
+     * the watch loop's finally block between every two watch sessions, so a probe sampling
+     * {@code isWatchLive()} during such a routine reconnect gap would tear down a
+     * ReplicationManager whose connection DID come up (2026-08-06 review finding). A watch that
+     * registered once and later died is the watch-retry loop's job to repair, not the probe's.
+     */
+    boolean hasWatchEverRegistered() {
+        return watchGeneration.get() > 0;
     }
 
     /**

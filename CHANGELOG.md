@@ -10,10 +10,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### InMemoryDriver: aborted/committed transactions could leave stale `CollectionIndexStore` entries, causing false duplicate-key errors on a provably empty collection
+A persistent `CollectionIndexStore` lazily built while a transaction is open is built from
+the transaction's private snapshot, i.e. from structurally-cloned document instances rather
+than the live ones. Those clones were registered into the store's unique-index buckets same
+as any real document. `commitTransaction()` already invalidated the store for every
+collection the transaction touched, but `abortTransaction()` did not - so on abort the store
+kept referencing the orphaned clones forever, since removal matches only by reference
+identity and can never match a clone against the real document it was copied from. Every
+later insert under that same unique-index key was then rejected as a duplicate, even after
+the live collection had been cleared to zero documents. Both `abortTransaction()` and
+`commitTransaction()` now invalidate the index store (and TTL queue) for every collection
+whose store was actually built while the transaction was open, not merely the ones it wrote
+to, since a read-only indexed query can trigger that same lazy rebuild without ever writing.
+
+#### PoppyDB: a re-syncing secondary broadcast its own initial-sync wipe as change-stream drop events, letting stale watchers destroy `admin.system.users` cluster-wide during a stepdown
+The initial sync's `clearLocalDatabases()` wipe and snapshot copy ran as regular commands and
+therefore emitted live change-stream events on the syncing node - including
+`drop admin.system.users`. During a live stepdown that is catastrophic: the demoted ex-primary
+immediately starts re-sync attempts toward the presumed new leader (each failed retry wiping
+again), while the other nodes' OLD ReplicationManagers are still watching the demoted node
+(they only tear down once their own ElectionManager delivers the leader change) and faithfully
+apply those wipe-drops to their own data. The drops then ricochet through every node's own
+re-emission, and even the freshly promoted primary applied the demoted node's wipe-drop right
+at its promotion (its stopping ReplicationManager flushes queued events) - so whether a user
+created on the new primary survived on any given node was pure timing (the
+`StepdownReplicationTest` ~40% flake, and a real data-loss window on production failovers).
+Initial-sync writes are now performed inside a new
+`InMemoryDriver.suppressChangeStreamEvents()` scope - mirroring MongoDB, where initial-sync
+writes are never oplogged - so the wipe + snapshot are invisible to change-stream watchers;
+steady-state replication applies still emit events as before (a promoted secondary must be
+able to serve resumable streams).
+
+#### Driver: failover read path could throw a raw NPE past every retry; stale `getLastConnectFailure()` after recovery
+The read-preference fallback chain read the volatile `primaryNode` field multiple times; the
+heartbeat nulls that field on stepdown or connection error - exactly while the fallback code
+runs - so `hosts.get(null)` could throw a `NullPointerException` that, not being a
+`MorphiumDriverException`, escaped every retry-catch on the read path and aborted a read the
+fallback was built to save. Both fallback sites now work on a local snapshot. Additionally,
+`getLastConnectFailure()` is cleared when a connect succeeds, so a caller polling after
+recovery no longer sees the pre-recovery error as if it were current.
+
+#### InMemoryDriver: `updateUser` reset the user's SCRAM mechanism set on every password change; malformed field types escaped as ClassCastException
+A password change without an explicit `mechanisms` field rebuilt the credentials with the
+both-mechanisms default, silently re-arming SCRAM-SHA-1 for a user deliberately created
+SHA-256-only; mongod preserves the existing mechanism set, and now the in-memory driver does
+too. `mechanisms` without `pwd` is now supported with mongod's subset-only semantics (stored
+credentials of the named mechanisms are kept verbatim, the rest dropped; non-subset requests
+are `BadValue`). All optional fields are shape-checked before casting, so `roles: "foo"` &co.
+produce a `BadValue` command error instead of an uncaught `ClassCastException`.
+
+#### PoppyDB: demoted leader could keep `primary==true` forever after a rapid leadership flap
+`onLeadershipChange` incremented the leadership epoch and then wrote the `primary` flag
+unsynchronized: a preempted stale dispatch could re-assert its outdated flag value AFTER a
+newer transition had written the current one. A node stuck with `primary==true` as a follower
+silently never replicates - `startReplicationToLeader`, the liveness probe and the retry chain
+all no-op on `primary`. Epoch bump and flag flip are now one atomic unit, making a stale
+overwrite structurally impossible. Related hardening in the same area: the post-start
+replication liveness probe now checks "watch never registered" (`watchGeneration`) instead of
+the instantaneous `isWatchLive()`, so it no longer tears down a healthy `ReplicationManager`
+it happens to sample during a routine watch-reconnect gap; and a late election callback can no
+longer install a `ReplicationManager` after `shutdown()` that nothing ever stops.
+
+#### PoppyDB: `rs.status()` reported a peer that died with the failover as SECONDARY forever
+`becomeLeader()` clears the peer-contact map, and a peer with no contact entry was treated as
+reachable indefinitely - so the classic crashed ex-primary, which never acks a single
+heartbeat of the new leader, was never reported DOWN. A missing entry is now only treated as
+reachable within a grace period (the heartbeat freshness window) measured from the moment
+leadership was assumed; beyond that the peer reports `state: 8, stateStr: "DOWN"`.
+
+#### `startPoppyDB.sh`: "port already in use, skipping node" did not actually skip
+The busy-port check printed the skip message but started the node anyway - the new JVM could
+not bind, but its PID had already overwritten the running node's PID file, which the failure
+branch then deleted, orphaning the still-running original process for `stop`/`status`. The
+skip is now real (and keeps the port sequence of the remaining nodes intact).
+
 #### PoppyDB: `--auth`/`--ssl` now work on a replica set - the internal election/replication channel was always plaintext and unauthenticated
 Each of `--auth` and `--ssl`, independently, made a multi-node PoppyDB replica set completely non-functional: `ElectionNetworkClient` (vote requests, heartbeats) and `ReplicationManager` (the sync connection to the primary) connected to peers as a plain, unauthenticated, unencrypted client, regardless of the server's own `--auth`/`--ssl` configuration. With `--ssl=true` every internal connection was rejected by the peer's TLS-only listener (`NotSslRecordException`); with `--auth=true` the election RPCs (`requestVote`/`appendEntries`) aren't on the pre-auth command whitelist, so every one was rejected as unauthorized - either way, no leader could ever be elected. Single-node PoppyDB with `--auth`/`--ssl` was unaffected; the client-facing enforcement itself was never the problem. The internal channel now authenticates as the configured root user and, when TLS is on, trusts exactly the server's own configured certificate (`ssl-keystore`, reused as the internal client's pinned truststore) - no new config keys, no change to auth enforcement.
 
 ### Added
+
+#### `dropUser` — the user lifecycle is complete (InMemoryDriver + PoppyDB)
+The in-memory driver (and with it PoppyDB) now implements mongod-compatible `dropUser`: the user
+document is removed and a delete event is emitted on `admin.system.users` under the same
+ordering lock as `createUser`/`updateUser`, so PoppyDB secondaries replicate the drop exactly
+like creates and updates (documentKey-keyed delete). On a replica set the command is
+primary-only like every other write - a secondary answers `NotWritablePrimary`. Previously the
+only way to remove a user was a raw delete on `admin.system.users`, which bypassed the
+event-ordering guarantee and was not wired into any command surface.
+
+#### `customData` support in `createUser`/`updateUser`
+`createUser` stores an optional `customData` document on the user (mongod's shape);
+`updateUser` accepts `customData` — replaced wholesale when given (including as the only field,
+which previously returned `BadValue`), preserved when omitted. A password change no longer
+silently discards stored `customData`. `authenticationRestrictions` remains unmodeled.
+
+#### Driver: automated failover test via wire-rewriting proxy, replaces manual `FailoverReproTest`
+`FailoverReproTest` reproduced the 6.2.6 failover regressions but required a hand-built local
+replica set and process kills (`kill -9`, SIGSTOP) run by hand — it was tagged `manual` and never
+ran in CI. `DriverFailoverProxyTest` reproduces the same client-visible failure modes — clean
+stepdown, hard kill, and the critical frozen-socket case (TCP connection alive but silent, the one
+a driver can't distinguish from a slow server without a timeout) — plus read/write/messaging
+recovery, through a reusable wire-level fault-injection proxy that sits between the driver and a
+real replica set instead of killing processes. Tagged `wire-failover`, it runs automatically
+against both MongoDB and PoppyDB replica sets in the normal test matrix. `FailoverReproTest` is
+removed.
+
+#### `morphium-jakarta-data` — optional Jakarta Data 1.0 runtime module
+A new optional module, `morphium-jakarta-data`, brings a [Jakarta Data 1.0](https://jakarta.ee/specifications/data/1.0/)
+provider implementation on top of Morphium's existing query engine: `@Repository`-based
+`CrudRepository`/`MorphiumRepository` interfaces with query derivation from method names
+(`findByCategory`, `countByStatus`, `deleteByX`, `And`/`Or`/`Between`/`In`/`Like`/`OrderBy`
+and the rest of the standard keyword set), JDQL via `@Query` (including `GROUP BY`/`HAVING`
+aggregates compiled into a Morphium aggregation pipeline), `@Find`/`@Delete` with explicit
+`@By` parameter binding, offset pagination (`Page<T>`) and cursor/keyset pagination
+(`CursoredPage<T>`), and both static (`@OrderBy`) and dynamic (`Sort`/`Order`) sorting. The
+module depends on Morphium core and on `jakarta.data:jakarta.data-api`; the dependency
+direction is strictly one-way — core has no knowledge of Jakarta Data and no dependency on
+this module, so an application declaring only `de.caluga:morphium` does not get
+`jakarta.data-api` on its classpath and none of these annotations or types become available.
+Building the reactor with `-DskipExtensions` produces a core-only build (core + PoppyDB, no
+extension modules) exactly as before this change. `morphium-jakarta-data` is deliberately
+framework-agnostic — plain Java classes with zero dependencies on Quarkus, Spring, or any DI
+container — because it is meant to be consumed transitively by framework integrations, not
+added directly by most applications: `quarkus-morphium` (build-time Gizmo bytecode
+generation) and `spring-boot-morphium` (JDK dynamic proxies) build on top of this module and
+will follow in subsequent PRs. The code originates from
+[Bardioc1977/morphium-jakarta-data](https://github.com/Bardioc1977/morphium-jakarta-data),
+which is being archived now that its content has moved into the main Morphium repository.
+See [Jakarta Data](docs/jakarta-data.md).
+
+#### `quarkus-morphium` — optional Quarkus extension for CDI integration
+A new optional module, `quarkus-morphium`, integrates Morphium into
+[Quarkus](https://quarkus.io) applications: a CDI producer for `Morphium`, type-safe
+runtime configuration via `@ConfigMapping` (`quarkus.morphium.*`), declarative
+`@MorphiumTransactional` transactions with `MorphiumTransactionEvent` CDI events
+(graceful degradation on Azure CosmosDB, auto-detected), MicroProfile liveness/readiness/
+startup health checks via SmallRye Health, Dev Services (an automatically-started MongoDB
+container, optionally as a single-node replica set), a Dev UI card with live connection
+info, build-time Jakarta Data `@Repository` implementations generated via Gizmo bytecode
+(no runtime reflection, no dynamic proxies — see [Jakarta Data](docs/jakarta-data.md) for
+the underlying query-derivation, JDQL, and pagination feature set), GraalVM native-image
+support (automatic reflection registration for every `@Entity`/`@Embedded` class), default
+`MorphiumId` JSON serialization as its canonical 24-character hex string (both Jackson and
+JSON-B, in both directions), and a MongoDB-backed migration runner with a distributed lock.
+The module publishes three artifacts — `quarkus-morphium` (runtime), `quarkus-morphium-deployment`
+(build-time processing), and `quarkus-morphium-testing` (test support) — plus an
+`integration-tests` submodule that is built and run but never published. Like
+`morphium-jakarta-data`, the core has zero compile- or runtime dependency on this module;
+building the reactor with `-DskipExtensions` produces an unchanged core-only build. The
+integration tests spin up a real MongoDB via Testcontainers and therefore need a running
+Docker daemon — when Docker is unavailable, they detect this and skip themselves rather than
+failing the build. **groupId migration:** this extension previously published under
+`io.quarkiverse.morphium` as part of the Quarkiverse organization; because it does not
+actually live in the [Quarkiverse](https://quarkiverse.github.io) GitHub organization,
+Maven coordinates now follow Morphium's own groupId, `de.caluga:quarkus-morphium`, and
+version in lockstep with the Morphium reactor. **Existing users of
+`io.quarkiverse.morphium:quarkus-morphium:1.2.0` must update their dependency's groupId to
+`de.caluga` and its version to the Morphium version they adopt (currently `6.3.x`)** — no
+package renames, no API changes, only the Maven coordinates move. The code originates from
+[Bardioc1977/quarkus-morphium](https://github.com/Bardioc1977/quarkus-morphium), which is
+being archived now that its content has moved into the main Morphium repository. See
+[Quarkus Extension](docs/quarkus-extension.md).
 
 #### PoppyDB: `--users-file` — declarative user provisioning (bootstrap, upsert, version-gated)
 Builds on user replication: `--rootUser`/`--rootPassword` only ever provisioned one admin user,
@@ -169,6 +327,12 @@ When the change-stream listener of `MultiCollectionMessaging` skipped a message 
 The change-stream watch loop receives a server reply at least every `maxTimeMS` (an empty batch when there are no events); that heartbeat is now stamped on the `WatchCommand` and exposed as `ChangeStreamMonitor.isStreamLive()`. Both messaging implementations use it to poll *immediately* when a stream falls silent — faster than any timer — instead of waiting for the next interval. The regular `messagingFallbackPollInterval` poll still always runs, deliberately: messages can (re-)appear without any matching stream event, e.g. requeueing by clearing `processedBy` via a plain DB update, and must be found before their TTL expires. `SingleCollectionMessaging` (whose own counter-based gate effectively polled every ~25s) now honors the configurable interval too, and gets the catch-up poll on every watch (re-)establishment for its message and lock monitors — including the one recreated by its stall watchdog. New diagnostics: `MultiCollectionMessaging.topicStreamsLive(topic)` and `SingleCollectionMessaging.changeStreamsLive()`.
 
 ### Changed
+
+#### InMemoryDriver: insert's duplicate-`_id` pre-check is an O(1) index lookup instead of an O(N) collection scan
+Every `insert()` call built a `HashSet` of all existing `_id`s by iterating the entire collection — under the exclusive write lock. For single-document inserts into large collections (the messaging workload) that scan was the dominant per-insert cost, and it was redundant: the per-collection `CollectionIndexStore` always carries a unique `_id_` index that reflects exactly the committed documents. The pre-check now asks that index directly (new `CollectionIndexStore.containsId`, a single hash lookup). Semantics are unchanged: ordered inserts still throw on a committed duplicate, unordered ones still collect a code-11000 writeError, and duplicates *within* one batch still surface at the per-document index insert, as before. As a side effect the check now uses the index's `MorphiumId`/`ObjectId` normalization, so a duplicate no longer slips past the pre-check just because caller and store hold the same id in different wrapper types.
+
+#### PoppyDB: dead `locked_by`/`locked` messaging index removed
+`MessagingOptimizer` created a `msg_locked_by_1_locked_1` index on every registered messaging collection, but those fields no longer exist on `Msg` — locking moved to the separate `MsgLock` collection long ago. Nothing ever queried the index; it only added per-insert maintenance cost on the hottest collection. Removed.
 
 #### InMemoryDriver/PoppyDB: dbStats and collStats report real sizes instead of zeros
 `db.stats()` answered all byte-size fields with 0, and `collStats` reported jol's *shallow* `sizeOf` — the ArrayList object header, not the data (and NPE'd on a missing collection). Both now compute real values: `dataSize`/`size` is the actual BSON size of every document (mongod's definition; computed on demand, O(data) — fine for a diagnostic command), `storageSize` equals it (no padding or compression in memory), `avgObjSize` follows, and index sizes are estimates proportional to the entry count (64 bytes per document per index). New fields: `totalSize`, and on dbStats `fsUsedSize`/`fsTotalSize` reporting the JVM heap — the "filesystem" an in-memory database actually lives on. Index counts now include the implicit `_id` index like mongod. The `$collStats` aggregation stage's `storageStats` uses the same computation; `collStats` on a missing collection answers zeros instead of failing.

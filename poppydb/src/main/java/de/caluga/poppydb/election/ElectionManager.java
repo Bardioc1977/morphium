@@ -158,6 +158,27 @@ public class ElectionManager {
      * Transition to FOLLOWER state.
      */
     private void becomeFollower(long term, String leaderId) {
+        becomeFollower(term, leaderId, true);
+    }
+
+    /**
+     * Transition to FOLLOWER state.
+     *
+     * @param resetTimer whether to restart the election timer as part of this transition.
+     *     Must be {@code true} for every caller that represents actual contact with a current
+     *     or future leader (a heartbeat, or granting a vote) — that contact is exactly what the
+     *     timer exists to detect, so it's correct to defer our own candidacy further. Must be
+     *     {@code false} for a bare term bump learned from a vote REQUEST we go on to deny (see
+     *     {@link #handleVoteRequest}): otherwise a lower-priority node whose own timeout fires
+     *     first can keep starting new terms every timeout interval, and each of those requests —
+     *     though correctly denied by the priority check below — would still reset a higher-
+     *     priority denier's timer via this method, indefinitely deferring the very candidacy the
+     *     priority check exists to protect. Found via a real 42s election (vs. the ~8s typical
+     *     for this cluster) on poppydb.fritz.box during the 6.3.0 pre-release full suite run:
+     *     the lowest-priority node retried across 4 terms, each retry re-arming the
+     *     second-priority node's timer moments before it would have fired on its own.
+     */
+    private void becomeFollower(long term, String leaderId, boolean resetTimer) {
         stateLock.lock();
         try {
             ElectionState previousState = state;
@@ -205,8 +226,11 @@ public class ElectionManager {
                 scheduler.execute(() -> onLeadershipChange.accept(false));
             }
 
-            // Restart election timer
-            resetElectionTimer();
+            // Restart election timer — see the resetTimer javadoc above for why this is
+            // conditional rather than unconditional.
+            if (resetTimer) {
+                resetElectionTimer();
+            }
 
         } finally {
             stateLock.unlock();
@@ -439,11 +463,15 @@ public class ElectionManager {
             log.debug("{} received vote request from {} for term {} (my term={}, candidate priority={}, my priority={})",
                     myAddress, request.getCandidateId(), requestTerm, myTerm, candidatePriority, myPriority);
 
-            // If request term is higher, update our term and become follower
+            // If request term is higher, update our term and become follower. Don't reset our
+            // own election timer here — this is only a vote REQUEST, not confirmed contact with
+            // a leader, and we may go on to deny it below (priorityOk). The timer is reset
+            // further down, but only on the branch where we actually grant the vote — see
+            // becomeFollower's resetTimer javadoc for why this distinction matters.
             if (requestTerm > myTerm) {
                 log.info("{} discovered higher term {} from {}, updating from {}",
                         myAddress, requestTerm, request.getCandidateId(), myTerm);
-                becomeFollower(requestTerm, null);
+                becomeFollower(requestTerm, null, false);
                 myTerm = currentTerm.get();
             }
 
@@ -1017,6 +1045,39 @@ public class ElectionManager {
      */
     public List<String> getPeerAddresses() {
         return Collections.unmodifiableList(peerAddresses);
+    }
+
+    /**
+     * Whether we (as leader) have heard a heartbeat ack from this peer recently enough to
+     * consider it reachable - reuses the same freshness window as priority-takeover
+     * eligibility (see {@link #checkPriorityTakeover} and its use of {@code peerLastContact}).
+     * Only meaningful when we ARE the leader: the leader is the only role
+     * that actively heartbeats every peer and tracks acks, so a follower has no independent
+     * way to know whether some OTHER follower is up - it returns true (optimistic/unknown) in
+     * that case.
+     *
+     * <p>A peer with NO contact entry at all gets a grace period of the same freshness window,
+     * measured from {@code leaderSince} ({@code becomeLeader()} clears {@code peerLastContact},
+     * so every peer starts entry-less on each new leadership). Within the window it is treated
+     * as reachable, so a healthy peer is never falsely flagged DOWN by the startup race (first
+     * heartbeat round-trip still in flight). Beyond it, no-entry means the peer has not acked a
+     * single heartbeat since we became leader - the typical shape of the ex-primary that died
+     * WITH the failover, which an optimistic-forever null-check would report SECONDARY for the
+     * rest of this leadership (2026-08-06 review finding).
+     */
+    public boolean isPeerReachable(String peer) {
+        if (state != ElectionState.LEADER) {
+            return true;
+        }
+
+        long freshnessMs = Math.max(3L * config.getHeartbeatIntervalMs(), 2000L);
+        Long lastContact = peerLastContact.get(peer);
+
+        if (lastContact == null) {
+            return System.currentTimeMillis() - leaderSince <= freshnessMs;
+        }
+
+        return System.currentTimeMillis() - lastContact <= freshnessMs;
     }
 
     /**

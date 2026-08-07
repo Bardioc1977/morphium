@@ -1,4 +1,4 @@
-# Morphium 6.2.4
+# Morphium
 
 **Feature-reiches MongoDB ODM und Messaging-Framework für Java 21+**
 
@@ -10,8 +10,9 @@ Morphium ist eine umfassende Datenschicht-Lösung für MongoDB mit:
 - ⚡ **Multi-Level Caching** mit automatischer Cluster-Synchronisation
 - 🔌 **Eigener MongoDB Wire-Protocol-Treiber** für direkte Kommunikation
 - 🧪 **In-Memory-Treiber** für schnelle Tests (deutlich weniger Latenz, kein MongoDB nötig)
+- 🌱 **PoppyDB** — MongoDB-kompatibler In-Memory-Server: Replica Sets, Auth/TLS, Messaging-Backend
 - 🎯 **JMS API (experimentell)** für standardbasiertes Messaging
-- 🚀 **JDK 21** mit Virtual Threads für optimale Concurrency
+- 🚀 **Java 21+** — moderne Sprachbasis (Pattern Matching, Sealed Types)
 
 [![Maven Central](https://img.shields.io/maven-central/v/de.caluga/morphium.svg)](https://search.maven.org/artifact/de.caluga/morphium)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -22,26 +23,191 @@ Morphium ist eine umfassende Datenschicht-Lösung für MongoDB mit:
 
 ### Schnellvergleich
 
-| Feature | Morphium | Spring Data + RabbitMQ | Kafka |
-|---------|----------|------------------------|-------|
-| Infrastruktur | Nur MongoDB | MongoDB + RabbitMQ | MongoDB + Kafka |
-| Setup-Komplexität | ⭐ Sehr niedrig | ⭐⭐⭐ Mittel | ⭐⭐⭐⭐⭐ Hoch |
-| Nachrichten persistent | Standard | Optional | Standard |
-| Nachrichtenpriorität | ✅ Ja | ✅ Ja | ❌ Nein |
-| Distributed Locks | ✅ Ja | ❌ Nein | ❌ Nein |
-| Durchsatz (interne Tests) | ~8K msg/s | 10K–50K msg/s | 100K+ msg/s |
-| Betrieb | ⭐ Sehr einfach | ⭐⭐ Mittel | ⭐⭐⭐⭐ Komplex |
+| Feature | Morphium | Morphium + PoppyDB | Spring Data + RabbitMQ | Kafka |
+|---------|----------|--------------------|------------------------|-------|
+| Infrastruktur | Nur MongoDB | **Keine** — eingebetteter Java-Server | MongoDB + RabbitMQ | MongoDB + Kafka |
+| Setup-Komplexität | ⭐ Sehr niedrig | ⭐ Minimal (eine Dependency) | ⭐⭐⭐ Mittel | ⭐⭐⭐⭐⭐ Hoch |
+| Nachrichten persistent | Standard | Snapshots (optional) | Optional | Standard |
+| Nachrichtenpriorität | ✅ Ja | ✅ Ja | ✅ Ja | ❌ Nein |
+| Distributed Locks | ✅ Ja | ✅ Ja | ❌ Nein | ❌ Nein |
+| Durchsatz one-way Send→Empfang* | ~870 msg/s | ~770–2100 msg/s | 10K–50K msg/s | 100K+ msg/s |
+| Round-Trip Request→Response (Ping-Pong)* | 89 msg/s | **223 msg/s (2,5×)** | — | — |
+| Betrieb | ⭐ Sehr einfach | ⭐ Trivial (ein Prozess) | ⭐⭐ Mittel | ⭐⭐⭐⭐ Komplex |
 
-_* Richtwerte aus internen Messungen; tatsächliche Werte hängen von Hardware und Workload ab._
+_* Alle Zahlen sind Richtwerte und hängen stark von Hardware und Workload ab; die
+Morphium-Werte sind [gemessen](docs/v5-vs-v6-performance.md), die RabbitMQ-/Kafka-Spalten
+nennen übliche Hersteller-/Community-Angaben. Die beiden Zeilen messen Unterschiedliches.
+**One-way** zählt nur Send→Empfang (keine Verarbeitung, keine Antwort): ~870 msg/s gegen ein
+3-Node-MongoDB-Replica-Set; PoppyDB läuft in-process und skaliert daher mit dem Host —
+~770 msg/s auf einem kleinen 4-Core-CI-Host, ~2100 msg/s auf einer Laptop-CPU. **Round-Trip**
+misst komplette Ping-Pongs (Request raus, Response zurück): 223 msg/s bei 4,5 ms Latenz gegen
+PoppyDB vs. 89 msg/s bei 11,3 ms gegen das MongoDB-Replica-Set — 2,5-facher Durchsatz bei
+weniger als halber Latenz, weil PoppyDB und Morphium Messaging aufeinander optimiert sind
+(beide Seiten erkennen das Gegenüber). PoppyDBs Stärke ist die Latenz, nicht der rohe
+One-way-Durchsatz auf knapper Hardware. Die Persistenz dort ist Snapshot-basiert, siehe die
+[PoppyDB-Sektion](#-poppydb--mongodb-kompatibler-in-memory-server) unten._
+
+_**Wie real sind Kafkas 100K+ — und wie groß ist die Lücke wirklich?** Wir haben beides auf
+ein und derselben Laptop-Maschine gemessen (Apple M1 Max, Single-Node Kafka 4.1, ~200-Byte-
+Payload, ein Consumer, end-to-end vom ersten Send bis zum letzten Empfang — derselbe Aufbau
+wie unser
+[One-way-Benchmark](poppydb/src/test/java/de/caluga/poppydb/MessagingOneWayThroughputBenchmark.java)).
+Im Normalbetrieb — asynchrones Senden, Batching im Client — erreichte Kafka ~900K msg/s;
+die 100K+-Spalte ist also real und auf moderner Hardware sogar konservativ. Zwingt man
+Kafka aber in Morphiums Semantik, bei der jede Message synchron gesendet und einzeln vom
+Broker bestätigt wird (4 Sender-Threads, `acks=all`), fällt Kafka auf ~8–10K msg/s vs.
+~1.800 msg/s für Morphium+PoppyDB auf derselben Maschine — Faktor 4–5, nicht 100+. Kafkas
+Spitzendurchsatz kommt fast vollständig daraus, tausende Records pro Netzwerk-Roundtrip zu
+batchen (ohne Per-Message-Broker-Ack und standardmäßig ohne Per-Message-fsync — Durability
+kommt aus der Replikation), nicht aus schnellerer Verarbeitung der einzelnen Message.
+Morphium Messaging sendet bewusst jede Message als einzeln bestätigten Insert; die
+verbleibenden 4–5× sind der Preis eines vollen ODM-Inserts (Object-Mapping, Wire-Protokoll,
+Change-Stream-Dispatch) pro Message._
+
+_**Wo genau bleiben Morphiums Kosten pro Message?** Auf derselben Maschine zerlegt: Ein
+roher `morphium.insert` desselben Msg-Dokuments in PoppyDB schafft ~4.600 docs/s — 0,33 ms
+pro Operation single-threaded, gleichauf mit Kafkas ~0,5 ms Request-Latenz; Wire-Protokoll
+und Server sind also nicht das Problem. Ein aktiver Change-Stream-Watcher bringt das auf
+~3.600 docs/s (Fanout, ~20 %), und der volle Messaging-Layer (Topic-Registry,
+Listener-Dispatch, Processing-Queue) landet bei ~2.500–2.800 msg/s, sobald die JVM warm
+ist — die ~1.800 msg/s oben sind ein Kaltstart-Wert. Der eigentliche Begrenzer ist die
+Schreib-Parallelität: PoppyDBs In-Memory-Backend serialisiert Writes, der Roh-Durchsatz
+sättigt daher bei ~4.600 Inserts/s, egal wie viele Sender-Threads man hinzufügt (1 Thread:
+~3.100/s; ab 2: ~4.300–4.600/s). Per-Message-bestätigter Durchsatz auf dem Niveau von
+Kafkas Synchron-Modus (~8–10K msg/s) ist das realistische Ziel künftiger
+Server-Parallelisierung — nicht 100K+, die kein System ohne Batching erreicht._
+
+## 🌱 PoppyDB — MongoDB-kompatibler In-Memory-Server
+
+PoppyDB ist Morphiums Schwesterprodukt: ein In-Memory-Server, der das MongoDB Wire Protocol
+spricht. Jeder Client kann sich verbinden — `mongosh`, Compass, PyMongo, die offiziellen
+Treiber und natürlich Morphium. Startet in Millisekunden, braucht null Infrastruktur: kein
+Docker, kein Testcontainers, keine MongoDB-Installation.
+
+- Wire Protocol, Change Streams, Aggregation Pipeline, Indizes, Transaktionen
+- **Replica-Set-Emulation** mit echter Leader Election und automatischem Failover
+- **SCRAM-Authentifizierung + TLS** (6.3.0) — `mongosh` loggt sich exakt wie gegen echtes MongoDB ein
+- **Deklaratives User-Provisioning** (6.3.0) via `--users-file` — idempotent, repliziert, versions-geschützt
+- **Snapshot-Persistenz** — periodische Dumps, automatisches Restore beim Start
+- **Messaging-Backend** — serverseitige Optimierungen speziell für Morphium Messaging
+
+### How-to: Eingebettetes Test-Backend
+
+```xml
+<dependency>
+    <groupId>de.caluga</groupId>
+    <artifactId>poppydb</artifactId>
+    <version>6.2.10</version>
+    <scope>test</scope>
+</dependency>
+```
+
+```java
+PoppyDB server = new PoppyDB(27017, "localhost", 100, 10);
+server.start();
+// ... jeder MongoDB-Client kann sich jetzt mit localhost:27017 verbinden ...
+server.shutdown();
+```
+
+### How-to: Die CLI — eine Wegwerf-MongoDB für JEDE Test-Suite
+
+Der Embedded-Weg oben ist Java-only; das CLI-Jar funktioniert für jeden Stack. Ein einzelnes,
+self-contained Jar von Maven Central (Classifier `cli`) — deine Python-/Node-/Go-/Rust-
+Integrationstests bekommen in Millisekunden einen MongoDB-kompatiblen Server, kein
+Docker-Image, kein Testcontainers, nichts zu installieren:
+
+```bash
+curl -O https://repo1.maven.org/maven2/de/caluga/poppydb/6.2.10/poppydb-6.2.10-cli.jar
+
+# Start für einen Testlauf: --no-config hält den Lauf isoliert von einer
+# versehentlichen ~/.config/poppydb/config auf Entwickler-Maschinen - gleiche
+# Flags, gleiches Verhalten in der CI
+java -jar poppydb-6.2.10-cli.jar --port 27017 --no-config
+```
+
+Test-Suite auf `mongodb://localhost:27017` zeigen lassen, Prozess danach beenden — der
+Zustand ist weg (außer man will Persistenz, siehe unten). `--help` listet alle Optionen.
+
+Die CLI ist aber nicht nur ein Test-Werkzeug: **Als Messaging-Backend ist sie
+production-ready** — genau dafür existieren PoppyDBs serverseitige
+Messaging-Optimierungen. Mit Snapshot-Persistenz, Replica Set für HA und Auth/TLS (alles
+unten) hat man einen stehenden Message Broker aus einem einzigen Jar. Ein genereller
+MongoDB-*Ersatz* ist sie nur für Dev/Test — als dediziertes Backend für Morphium Messaging
+ist sie die Empfehlung, siehe das
+[Deployment-Playbook](docs/howtos/poppydb-deployment.md).
+
+### How-to: Standalone-Server mit Persistenz
+
+```bash
+java -jar poppydb-6.2.10-cli.jar --port 27017 --dump-dir ./data --dump-interval 300
+```
+
+Snapshots alle 5 Minuten, finaler Dump beim Shutdown, automatisches Restore beim nächsten
+Start. Die Konfiguration kann auch in einer Properties-Datei liegen: `--cfg /etc/poppydb/config`
+(vorab validieren mit `--check-config`, effektives Ergebnis inspizieren mit `--print-config`).
+
+### How-to: 3-Node-Replica-Set
+
+Ein Prozess pro Knoten, alle mit derselben Seed-Liste — die Wahl bestimmt den Primary,
+Failover passiert automatisch:
+
+```bash
+java -jar poppydb-6.2.10-cli.jar -p 17017 --rs-name myrs \
+  --rs-seed host1:17017,host2:17017,host3:17017 --rs-priorities 100,50,50
+```
+
+User (`admin.system.users`) replizieren über das Set — Logins überleben den Failover.
+
+### How-to: Authentifizierung + TLS (6.3.0)
+
+```bash
+java -jar poppydb-cli.jar -p 27018 --auth --rootUser admin --rootPassword s3cr3t \
+  --ssl --sslKeystore server.jks --sslKeystorePassword changeit
+
+mongosh "mongodb://admin:s3cr3t@localhost:27018/test?authSource=admin"
+```
+
+Für die deklarative Provisionierung eines ganzen User-Sets zeigt `--users-file` auf eine
+JSON-Datei — bei jedem Leadership-Wechsel idempotent angewendet, per Version-Gate gegen
+Rollback geschützt.
+
+### How-to: Message Queue ohne MongoDB
+
+Morphium Messaging läuft mit PoppyDB als Backend — eine vollwertige Message Queue (Topics,
+exklusive Zustellung, Request/Response) mit einer einzigen Java-Dependency. Das ist ein
+Produktions-Use-Case, kein Test-Trick: PoppyDB und Morphium Messaging sind aufeinander
+optimiert, und eine Standalone-PoppyDB (CLI, mit Persistenz + Replica Set + Auth/TLS) ergibt
+einen dedizierten Message Broker, ohne eine MongoDB zu betreiben:
+
+```java
+PoppyDB server = new PoppyDB(27017, "localhost", 100, 10);
+server.start();
+
+try (Morphium morphium = new Morphium(cfg)) {          // cfg zeigt auf localhost:27017
+    MorphiumMessaging messaging = morphium.createMessaging();
+    messaging.addListenerForTopic("orders", (mq, msg) -> {
+        System.out.println("Neue Bestellung: " + msg.getValue());
+        return null;
+    });
+    messaging.start();
+}
+```
+
+📖 **Vertiefung:** [PoppyDB-Guide](docs/poppydb.md) ·
+[Production-Deployment-Playbook](docs/howtos/poppydb-deployment.md) ·
+[Migration von MongoDB](docs/howtos/migration-mongodb-to-poppydb.md)
 
 ## 📚 Dokumentation
 
 ### Schnellzugriff
 - **[Dokumentenportal](docs/index.md)** – Einstieg in sämtliche Guides
 - **[Überblick](docs/overview.md)** – Kernkonzepte, Quickstart, Kompatibilität
+- **[Upgrade v6.2→v6.3](docs/howtos/migration-v6_2-to-v6_3.md)** – was sich in 6.3.x ändert
 - **[Upgrade v6.1→v6.2](docs/howtos/migration-v6_1-to-v6_2.md)** – Migrationsleitfaden für 6.2.x
 - **[Migration v5→v6](docs/howtos/migration-v5-to-v6.md)** – Schritt-für-Schritt-Anleitung
 - **[InMemory Driver Guide](docs/howtos/inmemory-driver.md)** – Features, Einschränkungen, Tests
+- **[PoppyDB-Guide](docs/poppydb.md)** – der MongoDB-kompatible In-Memory-Server im Detail
+- **[PoppyDB Deployment-Playbook](docs/howtos/poppydb-deployment.md)** – Config-File, Replica Sets, Auth/TLS in Produktion
 
 ### Weitere Ressourcen
 - Aggregationsbeispiele: `docs/howtos/aggregation-examples.md`
@@ -56,25 +222,9 @@ _* Richtwerte aus internen Messungen; tatsächliche Werte hängen von Hardware u
 Morphium ist jetzt ein Multi-Module-Projekt: `morphium-parent` (BOM), `morphium` (Core-Bibliothek) und `poppydb` (Server). Die Core-Bibliothek `de.caluga:morphium` enthält keine Server-Abhängigkeiten (Netty etc.) mehr — ca. 90% schlanker für Nutzer, die nur das ODM benötigen.
 
 ### PoppyDB – Standalone MongoDB-kompatibler Server
-Der ehemalige MorphiumServer ist jetzt ein eigenständiges Modul `de.caluga:poppydb`. Er implementiert das MongoDB Wire Protocol als In-Memory-Server mit Replica-Set-Emulation, Change Streams, Aggregation Pipeline und Snapshot-basierter Persistenz.
-
-PoppyDB und Morphium Messaging sind **aufeinander optimiert** — beide Seiten erkennen das Gegenüber und passen ihr Verhalten an. Das Ergebnis: niedrigere Latenz und weniger Overhead als mit einer echten MongoDB als Messaging-Backend.
-
-```xml
-<dependency>
-    <groupId>de.caluga</groupId>
-    <artifactId>poppydb</artifactId>
-    <version>6.2.4</version>
-    <scope>test</scope> <!-- oder scope entfernen für produktiven Einsatz -->
-</dependency>
-```
-
-- ✅ **Volle Wire-Protocol-Unterstützung**: Jeder MongoDB-Client kann sich verbinden (mongosh, Compass, PyMongo, ...)
-- ✅ **Messaging-Backend**: Morphium-Messaging ohne MongoDB betreiben — optimiert für niedrige Latenz
-- ✅ **CLI-Tooling**: `poppydb-6.2.4-cli.jar` für Standalone-Deployment
-- ✅ **Replica-Set-Emulation**: Cluster-Verhalten testen ohne echtes MongoDB
-- ✅ **Snapshot-Persistenz**: `--dump-dir` / `--dump-interval` zum Sichern der Daten über Neustarts
-- ✅ **Opt-in-Authentifizierung & TLS** (6.3.0): Echtes SCRAM-SHA-1/-256 (`--auth`, `--rootUser`) plus SSL/TLS (`--ssl`) — Standard-Clients wie mongosh authentifizieren sich exakt wie gegen echtes MongoDB
+Der ehemalige MorphiumServer wurde in 6.2 zum eigenständigen Modul `de.caluga:poppydb` — was
+er kann und wie man ihn einsetzt, steht in der
+[PoppyDB-Sektion oben](#-poppydb--mongodb-kompatibler-in-memory-server).
 
 ### MorphiumDriverException ist jetzt unchecked
 `MorphiumDriverException` erbt von `RuntimeException` — konsistent mit dem MongoDB Java Driver. Eliminiert 40+ Boilerplate `catch-wrap-rethrow`-Blöcke.
@@ -91,8 +241,8 @@ Funktioniert korrekt mit `store()` und `storeList()`, unterstützt `@CreationTim
 ### CosmosDB Auto-Erkennung
 Morphium erkennt Azure CosmosDB-Verbindungen und passt sein Verhalten automatisch an.
 
-### Patch-Releases 6.2.1 – 6.2.4
-Die 6.2.x-Patch-Releases brachten laufend Verbesserungen, unter anderem: serverseitiges Empfänger-Filtering und einen Liveness-Watchdog fürs Messaging, die neue Einstellung `defaultQueryTimeoutMS`, Feldnamen-Übersetzung in `Aggregator` und `Query.distinct()`, eine eigene `MorphiumDocumentTooLargeException` sowie zahlreiche Robustheits-Fixes für PoppyDB und den InMemoryDriver.
+### Patch-Releases 6.2.1 – 6.2.10
+Die 6.2.x-Patch-Releases brachten laufend Verbesserungen, unter anderem: serverseitiges Empfänger-Filtering und einen Liveness-Watchdog fürs Messaging, die neue Einstellung `defaultQueryTimeoutMS`, Feldnamen-Übersetzung in `Aggregator` und `Query.distinct()`, eine eigene `MorphiumDocumentTooLargeException` sowie zahlreiche Robustheits-Fixes für PoppyDB und den InMemoryDriver. Die späteren Patches (6.2.5–6.2.10) konzentrierten sich auf Produktions-Härtung von Wire-Pfad und Messaging: Mid-Message-Read-Timeouts desynchronisieren den Wire-Stream nicht mehr, Antworten werden gegen ihre Request-ID (`responseTo`) verifiziert, Change Streams setzen nach Neustarts am letzten Token wieder auf statt Events zu überspringen, und exklusive Messages können bei mitten in der Verarbeitung verlorenem Lock nicht mehr doppelt verarbeitet werden.
 
 Siehe [CHANGELOG](CHANGELOG.md) für alle Details.
 
@@ -120,7 +270,7 @@ public void doStuff() { ... }
 
 | | 6.1.x | 6.2.x |
 |---|---|---|
-| Maven-Artifact | in `morphium` enthalten | separat: `de.caluga:poppydb:6.2.4` |
+| Maven-Artifact | in `morphium` enthalten | separat: `de.caluga:poppydb:6.2.10` |
 | Package | `de.caluga.morphium.server` | `de.caluga.poppydb` |
 | Hauptklasse | `MorphiumServer` | `PoppyDB` |
 | CLI-JAR | `morphium-*-server-cli.jar` | `poppydb-*-cli.jar` |
@@ -142,18 +292,16 @@ Detaillierte Anleitung: **[Migration v6.1→v6.2](docs/howtos/migration-v6_1-to-
 ## 🚀 Neu in Version 6.0
 
 ### JDK 21 & Moderne Java-Features
-- **Virtual Threads**: Messaging-System optimiert für Project Loom
 - **Pattern Matching**: Verbesserte Code-Klarheit und Typ-Sicherheit
 - **Records**: Noch nicht als `@Entity` oder `@Embedded` unterstützt (siehe [#116](https://github.com/sboesebeck/morphium/issues/116))
 - **Sealed Classes**: Bessere Typ-Hierarchien in Domain-Models
+- **Virtual Threads** wurden in dieser Ära eingeführt, aber in 6.2.x wieder ausgebaut: JDK 21s `synchronized`-Pinning führte unter Last zu Deadlocks. Morphium läuft durchgehend auf Plattform-Threads; eine Neubewertung ist geplant, sobald JEP 491 (JDK 24+) die Baseline ist.
 
 ### Treiber & Konnektivität
 - **SSL/TLS-Unterstützung**: Sichere Verbindungen zu MongoDB-Instanzen (seit v6.0)
-- **Virtual Threads** im Treiber für optimale Performance
 
 ### Verbessertes Messaging-System
 - **Weniger Duplikate**: Optimierte Message-Processing-Logik
-- **Virtual Thread Integration**: Bessere Concurrency-Performance
 - **Höherer Durchsatz**: Interne Benchmarks zeigen deutliche Steigerungen
 - **Distributed Locking**: Verbesserte Multi-Instance-Koordination
 
@@ -199,7 +347,7 @@ Upgrade von v6.1? → `docs/howtos/migration-v6_1-to-v6_2.md`
 <dependency>
   <groupId>de.caluga</groupId>
   <artifactId>morphium</artifactId>
-  <version>6.2.4</version>
+  <version>6.2.10</version>
 </dependency>
 ```
 
@@ -382,13 +530,13 @@ PoppyDB (ehemals MorphiumServer) ist ein eigenständiger Prozess, der das MongoD
 
 ```bash
 # Server starten
-java -jar poppydb/target/poppydb-6.2.4-cli.jar
+java -jar poppydb/target/poppydb-6.2.10-cli.jar
 
 # Clients verbinden (z.B. MongoDB Compass, mongosh)
 mongosh mongodb://localhost:27017
 
 # Start mit Persistenz (Snapshots)
-java -jar poppydb/target/poppydb-6.2.4-cli.jar --dump-dir ./data --dump-interval 300
+java -jar poppydb/target/poppydb-6.2.10-cli.jar --dump-dir ./data --dump-interval 300
 ```
 
 **Replica Set Unterstützung (experimentell)**
@@ -396,7 +544,7 @@ java -jar poppydb/target/poppydb-6.2.4-cli.jar --dump-dir ./data --dump-interval
 PoppyDB unterstützt eine grundlegende Replica-Set-Emulation. Starten Sie mehrere Instanzen mit demselben Replica-Set-Namen und derselben Seed-Liste:
 
 ```bash
-java -jar poppydb/target/poppydb-6.2.4-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
+java -jar poppydb/target/poppydb-6.2.10-cli.jar --rs-name my-rs --rs-seed host1:17017,host2:17018
 ```
 
 **Use Cases:**
@@ -470,6 +618,6 @@ Ein besonderer Dank geht an **Heiko Kopp** ([Bardioc1977](https://github.com/Bar
 
 **Upgrade geplant?** Siehe [Upgrade v6.1→v6.2](docs/howtos/migration-v6_1-to-v6_2.md) oder [Migration v5→v6](docs/howtos/migration-v5-to-v6.md).
 
-Viel Erfolg mit Morphium 6.2.4! 🚀
+Viel Erfolg mit Morphium! 🚀
 
 *Stephan Bösebeck & das Morphium-Team*

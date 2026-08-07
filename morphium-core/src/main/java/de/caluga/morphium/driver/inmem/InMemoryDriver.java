@@ -416,6 +416,16 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
      * read/write admin.system.users through the generic paths (which never touch this mutex).
      * Deadlock-free: this mutex is always acquired BEFORE the users collection lock and nothing
      * acquires it while holding any collection lock, so no lock-order cycle exists.
+     *
+     * <p>SCOPE (honest limits, 2026-08-06 review): the ordering guarantee holds only among the
+     * user writes that take this mutex - createUser/updateUser/dropUser vs each other. It does
+     * NOT cover (a) RAW deletes on admin.system.users (the generic delete path does not take
+     * this mutex and can still get its token inverted relative to a concurrent create/update -
+     * use dropUser), and (b) cross-namespace inversion: a concurrent write to
+     * any OTHER collection can be assigned a higher token yet complete delivery before a user
+     * event - combined with a resume via max-seen-token (PoppyDB's lastAppliedSequence), a
+     * reconnecting secondary can then skip the user event until the next full resync. Both are
+     * follow-up tickets, not properties this lock provides.
      */
     private final java.util.concurrent.locks.ReentrantLock userWriteEmitLock = new java.util.concurrent.locks.ReentrantLock();
     private final List<String> hostSeed = new CopyOnWriteArrayList<>();
@@ -1382,6 +1392,9 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
     private volatile int memoryRejectPercent = 90;
     private final AtomicBoolean memoryWarnActive = new AtomicBoolean(false);
     private static final ThreadLocal<Boolean> memoryGuardBypass = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    // See suppressChangeStreamEvents(): thread-local because the replication initial sync runs on
+    // its own dedicated thread, and only THAT thread's writes must go unobserved.
+    private static final ThreadLocal<Boolean> changeStreamSuppressed = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     /** Warn/reject thresholds in percent of max heap; 100 disables the respective stage. */
     public void setMemoryWatermarks(int warnPercent, int rejectPercent) {
@@ -1463,6 +1476,32 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         }
     }
 
+    /**
+     * try-with-resources scope during which writes performed by this thread emit NO change-stream
+     * events: nothing is recorded into the change-stream history and nothing is dispatched to
+     * subscribers.
+     *
+     * <p>Used by PoppyDB's replication initial sync (wipe + snapshot copy), mirroring MongoDB's
+     * semantics that initial-sync writes are never oplogged. Without this, a re-syncing secondary
+     * broadcasts its own {@code clearLocalDatabases()} wipe as live {@code drop} events - and
+     * during a leadership transition the OTHER nodes' still-running old ReplicationManagers
+     * (watching the demoted ex-primary) faithfully apply those drops to their own data,
+     * destroying {@code admin.system.users} cluster-wide (observed as the
+     * StepdownReplicationTest flake: the freshly-promoted primary itself applied the demoted
+     * node's wipe-drop right before/while being promoted).
+     */
+    public ChangeStreamSuppressionScope suppressChangeStreamEvents() {
+        changeStreamSuppressed.set(Boolean.TRUE);
+        return new ChangeStreamSuppressionScope();
+    }
+
+    public static final class ChangeStreamSuppressionScope implements AutoCloseable {
+        @Override
+        public void close() {
+            changeStreamSuppressed.set(Boolean.FALSE);
+        }
+    }
+
     private void checkMemoryWatermark() throws MorphiumDriverException {
         if (memoryWarnPercent >= 100 && memoryRejectPercent >= 100) {
             return;
@@ -1520,7 +1559,7 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         }
 
         names.addAll(Set.of("serverStatus", "bulkWrite", "saslStart", "saslContinue", "createUser", "updateUser",
-                "registerMessagingCollection", "unregisterMessagingSubscriber", "dbHash", "validate"));
+                "dropUser", "registerMessagingCollection", "unregisterMessagingSubscriber", "dbHash", "validate"));
         return names;
     }
 
@@ -1561,7 +1600,8 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         return null;
     }
 
-    private int createUserInternal(String db, String user, String pwd, List<Object> roles, List<String> mechanisms) {
+    private int createUserInternal(String db, String user, String pwd, List<Object> roles, List<String> mechanisms,
+                                   Map<String, Object> customData) {
         // Fast pre-lock check only for the common "already exists" answer - the authoritative
         // check happens under the write lock below, because two concurrent createUsers must not
         // both act on the same pre-lock snapshot (that was the TOCTOU: both passed this check
@@ -1577,6 +1617,9 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
             // (~ms range) and a losing racer simply discards the document
             Map<String, Object> doc = de.caluga.morphium.driver.inmem.auth.UserDocuments
                 .buildUserDocument(db, user, pwd, roles, mechanisms);
+            if (customData != null) {
+                doc.put("customData", customData);
+            }
             List<Map<String, Object>> users = getCollection(USERS_DB, USERS_COLLECTION);
 
             // held across store + notify so stream order equals store order - see userWriteEmitLock
@@ -1616,6 +1659,13 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
      * new credentials cryptographically to the old password) and/or replaces {@code roles}.
      * {@code buildUserDocument}'s {@code _id} is derived from db+user alone, so the replacement
      * document keeps the same {@code _id} as the document it replaces without any extra bookkeeping.
+     *
+     * <p>Mechanism semantics follow mongod: a pwd change WITHOUT {@code mechanisms} preserves the
+     * user's existing mechanism set (it does not reset to the both-mechanisms default), and
+     * {@code mechanisms} without {@code pwd} is a subset-only update that keeps the stored
+     * credentials of the named mechanisms and drops the rest. {@code customData} follows mongod
+     * too: replaced wholesale when given (also as the only field), preserved when omitted.
+     * Not modeled: {@code authenticationRestrictions}.
      */
     private int updateUserInternal(Map<String, Object> cmdMap) {
         String db = (String) cmdMap.get("$db");
@@ -1625,14 +1675,49 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
             return errorResult(2, "BadValue", "updateUser requires a user name");
         }
 
-        String pwd = (String) cmdMap.get("pwd");
-        @SuppressWarnings("unchecked")
-        List<Object> roles = (List<Object>) cmdMap.get("roles");
-        @SuppressWarnings("unchecked")
-        List<String> mechanisms = (List<String>) cmdMap.get("mechanisms");
+        // Shape-check every optional field BEFORE casting: a client sending e.g. roles as a
+        // string must get a mongod-style BadValue command error, not an uncaught
+        // ClassCastException out of the command handler.
+        Object pwdRaw = cmdMap.get("pwd");
+        if (pwdRaw != null && (!(pwdRaw instanceof String) || ((String) pwdRaw).isBlank())) {
+            return errorResult(2, "BadValue", "pwd must be a non-empty string");
+        }
+        String pwd = (String) pwdRaw;
 
-        if (pwd == null && roles == null) {
-            return errorResult(2, "BadValue", "updateUser requires at least one of pwd or roles");
+        Object rolesRaw = cmdMap.get("roles");
+        if (rolesRaw != null && !(rolesRaw instanceof List)) {
+            return errorResult(2, "BadValue", "roles must be an array");
+        }
+        @SuppressWarnings("unchecked")
+        List<Object> roles = (List<Object>) rolesRaw;
+
+        Object mechanismsRaw = cmdMap.get("mechanisms");
+        if (mechanismsRaw != null && !(mechanismsRaw instanceof List)) {
+            return errorResult(2, "BadValue", "mechanisms must be an array");
+        }
+        @SuppressWarnings("unchecked")
+        List<String> mechanisms = (List<String>) mechanismsRaw;
+        if (mechanisms != null) {
+            if (mechanisms.isEmpty()) {
+                return errorResult(2, "BadValue", "mechanisms field must not be empty");
+            }
+            for (Object m : (List<?>) mechanisms) {
+                if (!(m instanceof String)) {
+                    return errorResult(2, "BadValue", "mechanisms must be an array of strings");
+                }
+            }
+        }
+
+        Object customDataRaw = cmdMap.get("customData");
+        if (customDataRaw != null && !(customDataRaw instanceof Map)) {
+            return errorResult(2, "BadValue", "customData must be a document");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> customData = (Map<String, Object>) customDataRaw;
+
+        if (pwd == null && roles == null && mechanisms == null && customData == null) {
+            return errorResult(2, "BadValue",
+                "updateUser requires at least one of pwd, roles, mechanisms or customData");
         }
 
         // Fast pre-lock check only for the common "no such user" answer. The authoritative
@@ -1671,11 +1756,54 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                     if (pwd != null) {
                         @SuppressWarnings("unchecked")
                         List<Object> effectiveRoles = roles != null ? roles : (List<Object>) current.get("roles");
+                        // mongod preserves the user's existing mechanism set when the command
+                        // omits "mechanisms" - passing null through to buildUserDocument would
+                        // instead reset to BOTH defaults, silently re-arming SCRAM-SHA-1
+                        // credentials for a user deliberately created SHA-256-only
+                        // (2026-08-06 review finding).
+                        List<String> effectiveMechanisms = mechanisms;
+                        if (effectiveMechanisms == null && current.get("credentials") instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> currentCreds = (Map<String, Object>) current.get("credentials");
+                            effectiveMechanisms = new ArrayList<>(currentCreds.keySet());
+                        }
                         replacement = de.caluga.morphium.driver.inmem.auth.UserDocuments
-                            .buildUserDocument(db, user, pwd, effectiveRoles, mechanisms);
+                            .buildUserDocument(db, user, pwd, effectiveRoles, effectiveMechanisms);
+                        // buildUserDocument creates a fresh document - customData would silently
+                        // vanish on every pwd change without this carry-over (mongod preserves it
+                        // when omitted, replaces it wholesale when given)
+                        Object effectiveCustomData = customData != null ? customData : current.get("customData");
+                        if (effectiveCustomData != null) {
+                            replacement.put("customData", effectiveCustomData);
+                        }
                     } else {
                         replacement = new LinkedHashMap<>(current);
-                        replacement.put("roles", roles);
+                        if (roles != null) {
+                            replacement.put("roles", roles);
+                        }
+                        if (customData != null) {
+                            replacement.put("customData", customData);
+                        }
+                        if (mechanisms != null) {
+                            // mongod: mechanisms without pwd is legal only as a SUBSET of the
+                            // user's existing mechanisms - the stored credentials for the named
+                            // mechanisms are kept verbatim (they can't be re-derived without the
+                            // password), all others are dropped.
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> currentCreds = current.get("credentials") instanceof Map
+                                ? (Map<String, Object>) current.get("credentials")
+                                : java.util.Map.of();
+                            Map<String, Object> keptCreds = new LinkedHashMap<>();
+                            for (Object m : (List<?>) mechanisms) {
+                                Object cred = currentCreds.get(m);
+                                if (cred == null) {
+                                    return errorResult(2, "BadValue",
+                                        "mechanisms field must be a subset of previously set mechanisms");
+                                }
+                                keptCreds.put((String) m, cred);
+                            }
+                            replacement.put("credentials", keptCreds);
+                        }
                     }
 
                     users.removeIf(doc -> id.equals(doc.get("_id")));
@@ -1694,6 +1822,72 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
             // buildUserDocument's resolveMechanisms throws this for an unknown mechanism name -
             // mongod-style callers expect a BadValue command error, not an uncaught exception.
             return errorResult(2, "BadValue", e.getMessage());
+        }
+
+        int requestId = commandNumber.incrementAndGet();
+        addResult(requestId, prepareResult(Doc.of("ok", 1.0)));
+        return requestId;
+    }
+
+    /**
+     * mongod-compatible {@code dropUser}: removes the user document and emits a delete event on
+     * admin.system.users (documentKey-keyed, same shape as the generic delete path - PoppyDB
+     * secondaries replicate the drop by applying exactly that delete). Runs under
+     * {@code userWriteEmitLock} so the delete event gets the same store-order-equals-token-order
+     * guarantee as createUser/updateUser - without it, a drop racing a concurrent create/update
+     * of the same user could invert token order and make secondaries converge on the wrong
+     * state (the gap the 2026-08-06 review documented for raw deletes).
+     */
+    private int dropUserInternal(Map<String, Object> cmdMap) {
+        String db = (String) cmdMap.get("$db");
+        Object nameRaw = cmdMap.get("dropUser");
+
+        if (!(nameRaw instanceof String) || ((String) nameRaw).isBlank()) {
+            return errorResult(2, "BadValue", "dropUser requires a user name");
+        }
+        String user = (String) nameRaw;
+
+        // Fast pre-lock check for the common "no such user" answer; authoritative resolve
+        // happens under the write lock below (same discipline as create/update).
+        if (findUserDocument(db, user) == null) {
+            return errorResult(11, "UserNotFound", "User \"" + user + "@" + db + "\" not found");
+        }
+
+        String id = de.caluga.morphium.driver.inmem.auth.UserDocuments.userId(db, user);
+
+        try {
+            Map<String, Object> removed = null;
+            List<Map<String, Object>> users = getCollection(USERS_DB, USERS_COLLECTION);
+
+            // held across store + notify so stream order equals store order - see userWriteEmitLock
+            userWriteEmitLock.lock();
+            try {
+                java.util.concurrent.locks.ReadWriteLock lock = getCollectionLock(USERS_DB, USERS_COLLECTION);
+                lock.writeLock().lock();
+                try {
+                    for (java.util.Iterator<Map<String, Object>> it = users.iterator(); it.hasNext(); ) {
+                        Map<String, Object> doc = it.next();
+                        if (id.equals(doc.get("_id"))) {
+                            removed = doc;
+                            it.remove();
+                            break;
+                        }
+                    }
+
+                    if (removed == null) {
+                        // lost the race against a concurrent drop since the pre-lock check
+                        return errorResult(11, "UserNotFound", "User \"" + user + "@" + db + "\" not found");
+                    }
+                } finally {
+                    lock.writeLock().unlock();
+                }
+                // same event shape as the generic delete path: op "delete", beforeDocument set
+                notifyWatchers(USERS_DB, USERS_COLLECTION, "delete", removed, null, null, removed);
+            } finally {
+                userWriteEmitLock.unlock();
+            }
+        } catch (MorphiumDriverException e) {
+            return errorResult(1, "InternalError", "could not drop user: " + e.getMessage());
         }
 
         int requestId = commandNumber.incrementAndGet();
@@ -1815,7 +2009,8 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         }
 
         List<Object> roles = cmd.getRoles() == null ? new ArrayList<>() : new ArrayList<Object>(cmd.getRoles());
-        return createUserInternal(cmd.getDb(), cmd.getUserName(), cmd.getPwd(), roles, cmd.getMechanisms());
+        return createUserInternal(cmd.getDb(), cmd.getUserName(), cmd.getPwd(), roles, cmd.getMechanisms(),
+            cmd.getCustomData());
     }
 
     public int runCommand(CreateRoleAdminCommand cmd) {
@@ -2067,12 +2262,18 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
             List<Object> roles = (List<Object>) cmdMap.get("roles");
             @SuppressWarnings("unchecked")
             List<String> mechanisms = (List<String>) cmdMap.get("mechanisms");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> customData = (Map<String, Object>) cmdMap.get("customData");
             return createUserInternal((String) cmdMap.get("$db"), (String) cmdMap.get("createUser"),
-                (String) cmdMap.get("pwd"), roles, mechanisms);
+                (String) cmdMap.get("pwd"), roles, mechanisms, customData);
         }
 
         if (commandName.equals("updateUser")) {
             return updateUserInternal(cmdMap);
+        }
+
+        if (commandName.equals("dropUser")) {
+            return dropUserInternal(cmdMap);
         }
 
         // serverStatus and the top-level bulkWrite (MongoDB 8.0 shape) have no typed command
@@ -5799,7 +6000,26 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         }
         CollectionIndexStore built = buildIndexStore(db, collection);
         CollectionIndexStore prev = indexStoreByCollection.putIfAbsent(key, built);
-        return prev != null ? prev : built;
+        if (prev != null) {
+            return prev;
+        }
+        // Record that this collection's persistent index store was actually BUILT (not merely
+        // reused) while a transaction is open - see
+        // InMemTransactionContext#getIndexStoreAccessedCollections. Only a build reads via
+        // getCollection(), which resolves against this transaction's private (cloned) snapshot
+        // while one is active - i.e. against structurally-cloned document instances, not the
+        // live ones - so only a build can seed the store with clones that must not outlive the
+        // transaction. A plain reuse of an already-built store can never introduce clones: the
+        // store already existed before this call (built either outside any transaction or by an
+        // earlier one that has since been invalidated on commit/abort), so it holds only
+        // references that were valid at the time it was built. Write paths are covered
+        // separately and unconditionally by markCollectionTouched before their first store
+        // mutation, so they need no recording here even though they also call this method.
+        InMemTransactionContext ctx = currentTransaction.get();
+        if (ctx != null) {
+            ctx.getIndexStoreAccessedCollections().add(db + "/" + collection);
+        }
+        return built;
     }
 
     private CollectionIndexStore buildIndexStore(String db, String collection) throws MorphiumDriverException {
@@ -6219,27 +6439,26 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                 }
             }
 
-            // Get collection once and create snapshot for duplicate checking
+            // Get collection once - used for capped eviction and the physical adds below
             var collectionData = getCollection(db, collection);
             // Fetch/build the persistent index store BEFORE any mutation of collectionData below -
             // see getIndexStore's lifecycle contract: a first-touch build must see the pre-insert
             // document list, or the later onInsert calls would double-count the new docs.
             CollectionIndexStore indexStore = getIndexStore(db, collection);
 
-            // Build HashSet of existing _ids for O(1) lookup instead of O(N) nested loop
-            Set<Object> existingIds = new HashSet<>();
-            for (Map<String, Object> existing : collectionData) {
-                Object id = existing.get("_id");
-                if (id != null) {
-                    existingIds.add(id);
-                }
-            }
-
-            // Check new objects for duplicates in O(M) time instead of O(N*M)
+            // Check new objects for duplicate _ids against the committed documents via the
+            // store's always-present unique _id_ index - an O(1) point lookup per document
+            // instead of building a HashSet over the WHOLE collection on every insert call
+            // (O(N) under the write lock, the dominant cost for single-document inserts into
+            // large collections, e.g. messaging). At this point the index reflects exactly the
+            // pre-insert document list (first-touch builds seed it via seedIdIndex, every write
+            // path maintains it incrementally), and this loop never adds to it - so duplicates
+            // BETWEEN documents of this same batch still only surface at onInsert below,
+            // exactly as with the old snapshot-based check.
             List<Map<String, Object>> idDuplicates = new ArrayList<>();
             for (int objIdx = 0; objIdx < objs.size(); objIdx++) {
                 Map<String, Object> o = objs.get(objIdx);
-                if (o.get("_id") != null && existingIds.contains(o.get("_id"))) {
+                if (o.get("_id") != null && indexStore.containsId(o.get("_id"))) {
                     if (ordered) {
                         throw new MorphiumDriverException("Duplicate _id! " + o.get("_id"), null);
                     }
@@ -6351,8 +6570,9 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         }
 
         // Notify watchers AFTER releasing the write lock to prevent deadlocks.
-        // notifyWatchers -> buildChangeStreamEvent -> shallowCopyAndNormalizeDocument
-        // creates a shallow copy (sufficient because doc values are not mutated in-place).
+        // notifyWatchers -> buildChangeStreamEvent -> deepCopyAndNormalizeDocument
+        // deep-copies each document, so events stay stable even when a later update
+        // mutates the stored document in place.
         for (Map<String, Object> o : objs) {
             notifyWatchers(db, collection, "insert", o);
         }
@@ -6465,7 +6685,7 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                                              IndexKey.of(java.util.Collections.singletonList(o.get("_id"))));
             if (!srch.isEmpty()) {
                 // Capture reference before removing; the object itself is not mutated,
-                // and shallowCopyAndNormalizeDocument in notifyWatchers will copy it
+                // and deepCopyAndNormalizeDocument in notifyWatchers will copy it
                 Map<String, Object> previous = srch.get(0);
                 getCollection(db, collection).remove(previous);
                 // "o" is a brand new Map instance, not the same live reference as "previous" -
@@ -8322,9 +8542,11 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                     // always push a fresh queue entry rather than trying to find/remove the old
                     // one (see ttlEnqueue's own Javadoc for why that's cheaper).
                     ttlEnqueue(db, collection, obj);
-                    // original is already a deepClone from line above, no need to
-                    // deep-copy again; notifyWatchers -> shallowCopyAndNormalizeDocument
-                    // will create its own shallow copy for the change stream event
+                    // original is already a deepClone from the line above; note that
+                    // notifyWatchers -> deepCopyAndNormalizeDocument still deep-copies it
+                    // AGAIN for the change stream event - a known redundant copy for the
+                    // before-image (original is exclusively owned by the notification path
+                    // at this point), kept for now for the method's uniform contract
                     Map<String, Object> updatedMap = computeUpdatedFields(original, obj);
                     List<String> removedList = computeRemovedFields(original, obj);
                     pendingNotifications.add(new PendingNotification(db, collection, "update", obj, updatedMap,
@@ -8388,6 +8610,12 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
      */
     private void notifyWatchers(String db, String collection, String op, Map doc, Map<String, Object> updatedFields,
                                 List<String> removedFields, Map<String, Object> beforeDocument) {
+        // Writes inside a suppressChangeStreamEvents() scope (replication initial sync: wipe +
+        // snapshot copy) are never observable via the change stream - neither recorded into the
+        // history nor dispatched to live subscribers. See the scope's javadoc for why.
+        if (Boolean.TRUE.equals(changeStreamSuppressed.get())) {
+            return;
+        }
         // Build and dispatch change stream event synchronously
         // This method is now called AFTER write locks are released (see
         // insert/store/update methods)
@@ -8396,10 +8624,11 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
         //
         // Note: "after lock release" means the sequence token below is NOT assigned under
         // the collection lock, so two racing writers can get tokens in the opposite of
-        // their store order. For admin.system.users writes that inversion is corrected by
-        // userWriteEmitLock (held across store+notify in createUserInternal /
+        // their store order. For createUser/updateUser racing EACH OTHER that inversion is
+        // corrected by userWriteEmitLock (held across store+notify in createUserInternal /
         // updateUserInternal) because PoppyDB replicates users via this stream in token
-        // order - see the field's javadoc for the full reasoning.
+        // order - see the field's javadoc, including its SCOPE paragraph: raw deletes on
+        // admin.system.users and cross-namespace token inversion are NOT covered.
         // log.debug("notifyWatchers called: db={}, coll={}, op={}, driver instance={}",
         // db, collection, op, System.identityHashCode(this));
         ChangeStreamEventInfo eventInfo = buildChangeStreamEvent(db, collection, op, doc, updatedFields, removedFields,
@@ -8447,8 +8676,8 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
     @SuppressWarnings("unchecked")
     private ChangeStreamEventInfo buildChangeStreamEvent(String db, String collection, String op, Map doc,
             Map<String, Object> updatedFields, List<String> removedFields, Map<String, Object> beforeDocument) {
-        Map<String, Object> newDocument = shallowCopyAndNormalizeDocument((Map<String, Object>) doc);
-        Map<String, Object> previousDocument = shallowCopyAndNormalizeDocument((Map<String, Object>) beforeDocument);
+        Map<String, Object> newDocument = deepCopyAndNormalizeDocument((Map<String, Object>) doc);
+        Map<String, Object> previousDocument = deepCopyAndNormalizeDocument((Map<String, Object>) beforeDocument);
 
         Map<String, Object> event = new LinkedHashMap<>();
         long token = changeStreamSequence.incrementAndGet();
@@ -8782,25 +9011,32 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
     }
 
     /**
-     * Creates a shallow copy of the document and normalizes the _id field.
+     * Creates a deep copy of the document and normalizes the _id field.
      * <p>
-     * A shallow copy is sufficient here because:
-     * 1. Primitive field values (String, Number, Boolean) are immutable.
-     * 2. The resulting event map is wrapped in Collections.unmodifiableMap() so
-     *    subscribers cannot modify it.
-     * 3. Each subscriber's deliver() creates its own working copy (new HashMap<>(event)).
-     * 4. Nested Maps/Lists in documents are not mutated in-place by InMemoryDriver —
-     *    updates replace the entire document in the collection.
+     * The copy MUST be deep - a shallow copy would share the stored document's nested
+     * Maps/Lists with the event, and those are NOT stable:
+     * 1. Update operators mutate live documents in place, including nested containers
+     *    ($set on dotted paths writes into the existing nested Map/List, $push/$addToSet
+     *    mutate the stored ArrayList itself, replacement updates clear()+putAll() the same
+     *    Map instance) - see CollectionIndexStore's identity contract, which relies on
+     *    exactly this.
+     * 2. Events outlive the write: they are appended to changeStreamHistory unconditionally
+     *    (resume/replication replay) and dispatched asynchronously after the collection
+     *    write lock is released, so a later update to the same document would retroactively
+     *    corrupt archived events or race a concurrent serialization.
      * <p>
-     * This avoids the expensive recursive deepCopyDoc() that was previously called for
-     * every change stream event, even when no subscriber matches.
+     * Collections.unmodifiableMap() on the event and the subscribers' own working copies
+     * only protect the event's top level, not shared nested structures. A shallow-copy
+     * variant of this method was tried once and reverted the same day (cf3e9cace) - do not
+     * reintroduce it while the update paths mutate in place.
      */
-    private Map<String, Object> shallowCopyAndNormalizeDocument(Map<String, Object> source) {
+    private Map<String, Object> deepCopyAndNormalizeDocument(Map<String, Object> source) {
         if (source == null) {
             return null;
         }
 
-        // Use deep copy to prevent shared mutable state between subscribers
+        // Deep copy to prevent shared mutable state between the live document, the event
+        // history, and subscribers
         Map<String, Object> copy = deepCopyDoc(source);
 
         if (copy.containsKey("_id")) {
@@ -10409,10 +10645,93 @@ public class InMemoryDriver implements MorphiumDriver, MongoConnection {
                 lock.writeLock().unlock();
             }
         }
+
+        // A read-only indexed query can lazily build a collection's persistent index store from
+        // THIS transaction's cloned snapshot (see getIndexStore) without ever writing to that
+        // collection, so it never appears in touchedCollections. That store must still be
+        // invalidated here - it may reference clone instances that must not outlive the
+        // transaction - even though there is no document list to merge back for it.
+        for (String key : ctx.getIndexStoreAccessedCollections()) {
+            if (ctx.getTouchedCollections().contains(key)) {
+                continue; // already invalidated above
+            }
+            invalidateIndexStoreForKey(key);
+        }
     }
 
+    /**
+     * Splits a {@code "db/collection"} key (as recorded in
+     * {@link InMemTransactionContext#getIndexStoreAccessedCollections}), takes that collection's
+     * write lock, and invalidates its persistent {@link CollectionIndexStore} and TTL expiry
+     * queue. Shared by {@link #commitTransaction}'s and {@link #abortTransaction}'s handling of
+     * index-store-accessed-but-not-written collections. Deliberately NOT used by
+     * {@code commitTransaction}'s {@code touchedCollections} loop above, which runs inside a
+     * lock already held for the document-list merge and needs that additional merge logic
+     * alongside the invalidation - folding it into this helper would change its semantics.
+     */
+    private void invalidateIndexStoreForKey(String key) {
+        int sep = key.indexOf('/');
+        String dbName = key.substring(0, sep);
+        String collName = key.substring(sep + 1);
+        java.util.concurrent.locks.ReadWriteLock lock = getCollectionLock(dbName, collName);
+        lock.writeLock().lock();
+        try {
+            invalidateIndexStore(dbName, collName);
+            invalidateTtlQueue(dbName, collName);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Aborts the currently active in-memory transaction, discarding its private document
+     * snapshot. Every collection whose persistent {@link CollectionIndexStore} was actually
+     * built (not merely reused) while this transaction was open - not merely the ones it wrote
+     * to - must have that store invalidated here, mirroring {@link #commitTransaction}'s
+     * equivalent invalidation.
+     *
+     * <p>A store built (lazily, on first {@link #getIndexStore} access) WHILE the transaction was
+     * open is built from {@link #getCollection}, which resolves against the transaction's
+     * snapshot while one is active (see {@link #getDB}) - i.e. against structurally-cloned
+     * document instances ({@link #deepCloneDatabase} deep-copies every document). Those clone
+     * instances get registered into the store's unique-index buckets via
+     * {@link CollectionIndexStore#addIndex}/{@code onInsert}. This happens for a WRITE (insert,
+     * update, delete - all of which call {@link #markCollectionTouched}) but just as easily for a
+     * purely READ-ONLY indexed query ({@code getDataFromIndex}), which never touches
+     * {@code markCollectionTouched} at all - see
+     * {@link InMemTransactionContext#getIndexStoreAccessedCollections} for why that set, not
+     * {@link InMemTransactionContext#getTouchedCollections}, is the correct one to invalidate
+     * against here.
+     *
+     * <p>On abort, the snapshot itself is simply dropped - but the *store* is a single object
+     * shared across the live database and every transaction (keyed only by "db.collection", see
+     * {@link #indexStoreByCollection}), so without an explicit invalidation here it keeps
+     * referencing those now-orphaned clone instances. The real live documents that were never
+     * part of this aborted transaction (or that a subsequent commit/clear removed) then can never
+     * be found by {@link CollectionIndexStore.IndexEntry#remove}, which matches by reference
+     * identity - the clone is a different object from the live document, so removal silently
+     * no-ops and the bucket keeps "existing" forever. Every later duplicate-key check against
+     * that key then fails, even after the real live collection has been cleared to zero
+     * documents - see the bug this fixes: a unique-index key rejected a totally fresh insert,
+     * because onInsert() found a bucket seeded from a clone that outlived its aborted
+     * transaction.
+     *
+     * <p>This bounds the damage rather than eliminating every related race: it guarantees a
+     * clone can no longer outlive the transaction that created it. A narrower, pre-existing race
+     * remains out of scope - while a transaction is still OPEN (before commit or abort), a
+     * concurrent non-transactional thread that deletes and then re-inserts a live document under
+     * the same unique key can still collide with the transaction's clone and see a false
+     * duplicate. That race is not introduced by this fix and is not addressed here.
+     */
     public void abortTransaction() {
+        InMemTransactionContext ctx = currentTransaction.get();
         currentTransaction.set(null);
+        if (ctx == null) {
+            return;
+        }
+        for (String key : ctx.getIndexStoreAccessedCollections()) {
+            invalidateIndexStoreForKey(key);
+        }
     }
 
     public void setTransactionContext(MorphiumTransactionContext ctx) {

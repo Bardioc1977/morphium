@@ -60,6 +60,15 @@ markdown_extensions:
       permalink: true
       title: On this page
 
+# Internal design/planning documents - not part of the published site at all.
+exclude_docs: |
+  superpowers/
+
+# Historical release notes are kept as plain files, deliberately not part of the nav
+# (CHANGELOG.md in the repo root is the maintained changelog).
+not_in_nav: |
+  releases/*
+
 nav:
   - Home: index.md
   - Getting Started:
@@ -73,6 +82,8 @@ nav:
     - Test Runner: test-runner.md
     - InMemory Driver: inmemory-driver.md
     - Quick Reference: howtos/inmemory-driver.md
+    - Wire Proxy (Fault Injection): wire-proxy.md
+    - Developer Testing Guide: developer-testing-guide.md
   - PoppyDB:
     - Overview: poppydb.md
     - Production Deployment Playbook: howtos/poppydb-deployment.md
@@ -85,11 +96,17 @@ nav:
     - Caching Examples: howtos/caching-examples.md
     - Cache Patterns: howtos/cache-patterns.md
     - Field Name Mapping: howtos/field-names.md
+    - Optimistic Locking: howtos/optimistic-locking.md
+    - References & Relationships: howtos/references-and-relationships.md
   - Core Features:
     - Messaging System: messaging.md
     - Messaging Implementations: howtos/messaging-implementations.md
     - SSL/TLS Connections: ssl-tls.md
     - Developer Guide: developer-guide.md
+  - Extensions:
+    # Placeholder: Spring-Boot-Integrationsseite folgt in einer späteren Welle (M5).
+    - Jakarta Data: jakarta-data.md
+    - Quarkus Extension: quarkus-extension.md
   - Reference:
     - API Reference: api-reference.md
     - Configuration: configuration-reference.md

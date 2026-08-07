@@ -208,6 +208,220 @@ public class UserWriteEventsTest {
         assertThat(rolesAfter).as("roles preserved when not passed to updateUser").isEmpty();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> credentialsOf(String id) {
+        var docs = drv.findByFieldValue("admin", "system.users", "_id", id);
+        assertThat(docs).hasSize(1);
+        return (Map<String, Object>) docs.get(0).get("credentials");
+    }
+
+    /**
+     * 2026-08-06 review finding: a pwd change WITHOUT "mechanisms" used to pass null through to
+     * buildUserDocument, which resets to the both-mechanisms default - silently re-arming
+     * SCRAM-SHA-1 credentials for a user deliberately created SHA-256-only. mongod preserves
+     * the existing mechanism set.
+     */
+    @Test
+    void updateUserPwdChangePreservesMechanismSet() throws Exception {
+        Map<String, Object> created = updateUser(Doc.of("createUser", "m1", "pwd", "pw",
+            "roles", List.of(), "mechanisms", List.of("SCRAM-SHA-256"), "$db", "admin"));
+        assertThat(created.get("ok")).as("createUser result: " + created).isEqualTo(1.0);
+        assertThat(credentialsOf("admin.m1").keySet()).containsExactly("SCRAM-SHA-256");
+
+        Map<String, Object> result = updateUser(Doc.of("updateUser", "m1", "pwd", "newpw", "$db", "admin"));
+        assertThat(result.get("ok")).as("updateUser result: " + result).isEqualTo(1.0);
+
+        assertThat(credentialsOf("admin.m1").keySet())
+            .as("a pwd-only update must keep the user's mechanism set, not reset to the default pair")
+            .containsExactly("SCRAM-SHA-256");
+    }
+
+    /** mongod semantics: mechanisms without pwd is a subset-only update keeping stored credentials verbatim. */
+    @Test
+    void updateUserMechanismsOnlySubsetKeepsStoredCredentials() throws Exception {
+        createUser("m2", "pw"); // default: both mechanisms
+        Map<String, Object> credsBefore = credentialsOf("admin.m2");
+        assertThat(credsBefore.keySet()).contains("SCRAM-SHA-1", "SCRAM-SHA-256");
+        @SuppressWarnings("unchecked")
+        Object storedKeyBefore = ((Map<String, Object>) credsBefore.get("SCRAM-SHA-256")).get("storedKey");
+
+        Map<String, Object> result = updateUser(Doc.of("updateUser", "m2",
+            "mechanisms", List.of("SCRAM-SHA-256"), "$db", "admin"));
+        assertThat(result.get("ok")).as("updateUser result: " + result).isEqualTo(1.0);
+
+        Map<String, Object> credsAfter = credentialsOf("admin.m2");
+        assertThat(credsAfter.keySet()).containsExactly("SCRAM-SHA-256");
+        @SuppressWarnings("unchecked")
+        Object storedKeyAfter = ((Map<String, Object>) credsAfter.get("SCRAM-SHA-256")).get("storedKey");
+        assertThat(storedKeyAfter)
+            .as("without a pwd the stored credentials cannot be re-derived and must be kept verbatim")
+            .isEqualTo(storedKeyBefore);
+    }
+
+    /** Requesting a mechanism the user has no stored credentials for must be BadValue, per mongod. */
+    @Test
+    void updateUserMechanismsOnlyNotSubsetIsBadValue() throws Exception {
+        Map<String, Object> created = updateUser(Doc.of("createUser", "m3", "pwd", "pw",
+            "roles", List.of(), "mechanisms", List.of("SCRAM-SHA-256"), "$db", "admin"));
+        assertThat(created.get("ok")).as("createUser result: " + created).isEqualTo(1.0);
+
+        Map<String, Object> result = updateUser(Doc.of("updateUser", "m3",
+            "mechanisms", List.of("SCRAM-SHA-1"), "$db", "admin"));
+        assertThat(result.get("ok")).isEqualTo(0.0);
+        assertThat(result.get("code")).isEqualTo(2);
+        assertThat(result.get("codeName")).isEqualTo("BadValue");
+        assertThat(credentialsOf("admin.m3").keySet())
+            .as("a rejected subset update must leave the stored credentials untouched")
+            .containsExactly("SCRAM-SHA-256");
+    }
+
+    // ---- dropUser (2026-08-06 follow-up: complete the user lifecycle) ----
+
+    /**
+     * mongod-compatible {@code dropUser}: removes the user document and emits a delete event on
+     * admin.system.users - under the same userWriteEmitLock ordering guarantee as
+     * createUser/updateUser, because PoppyDB secondaries replicate the drop via exactly this
+     * event (documentKey._id keyed delete).
+     */
+    @Test
+    void dropUserRemovesUserAndEmitsDeleteEvent() throws Exception {
+        createUser("d1", "pw");
+        ClusterWatch cw = subscribeClusterWatch();
+        Map<String, Object> result;
+        try {
+            result = updateUser(Doc.of("dropUser", "d1", "$db", "admin"));
+            TestUtils.waitForConditionToBecomeTrue(5000, "no delete event for d1 arrived: " + cw.events,
+                () -> cw.events.stream().anyMatch(e -> "delete".equals(e.get("operationType"))));
+        } finally {
+            cw.stop();
+        }
+
+        assertThat(result.get("ok")).as("dropUser result: " + result).isEqualTo(1.0);
+        assertThat(drv.findByFieldValue("admin", "system.users", "_id", "admin.d1"))
+            .as("user document must be gone after dropUser").isEmpty();
+
+        Map<String, Object> event = cw.firstOfType("delete");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> ns = (Map<String, Object>) event.get("ns");
+        assertThat(ns.get("db")).isEqualTo("admin");
+        assertThat(ns.get("coll")).isEqualTo("system.users");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> docKey = (Map<String, Object>) event.get("documentKey");
+        assertThat(docKey).as("delete event must carry documentKey").isNotNull();
+        assertThat(docKey.get("_id")).isEqualTo("admin.d1");
+    }
+
+    @Test
+    void dropUserUnknownUserIsCode11() throws Exception {
+        Map<String, Object> result = updateUser(Doc.of("dropUser", "no-such-user", "$db", "admin"));
+        assertThat(result.get("ok")).isEqualTo(0.0);
+        assertThat(result.get("code")).isEqualTo(11);
+        assertThat(result.get("codeName")).isEqualTo("UserNotFound");
+    }
+
+    @Test
+    void dropUserMissingNameIsBadValue() throws Exception {
+        Map<String, Object> result = updateUser(Doc.of("dropUser", "", "$db", "admin"));
+        assertThat(result.get("ok")).isEqualTo(0.0);
+        assertThat(result.get("code")).isEqualTo(2);
+        assertThat(result.get("codeName")).isEqualTo("BadValue");
+    }
+
+    // ---- customData (2026-08-06 follow-up: mongod models it, we returned BadValue) ----
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> userDoc(String id) {
+        var docs = drv.findByFieldValue("admin", "system.users", "_id", id);
+        assertThat(docs).hasSize(1);
+        return docs.get(0);
+    }
+
+    @Test
+    void createUserStoresCustomData() throws Exception {
+        Map<String, Object> created = updateUser(Doc.of("createUser", "c1", "pwd", "pw",
+            "roles", List.of(), "customData", Doc.of("team", "platform"), "$db", "admin"));
+        assertThat(created.get("ok")).as("createUser result: " + created).isEqualTo(1.0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> customData = (Map<String, Object>) userDoc("admin.c1").get("customData");
+        assertThat(customData).as("customData must be stored on the user document").isNotNull();
+        assertThat(customData.get("team")).isEqualTo("platform");
+    }
+
+    @Test
+    void updateUserCustomDataOnlyReplacesCustomDataAndKeepsCredentials() throws Exception {
+        createUser("c2", "pw");
+        @SuppressWarnings("unchecked")
+        Object storedKeyBefore = ((Map<String, Object>) credentialsOf("admin.c2").get("SCRAM-SHA-256")).get("storedKey");
+
+        Map<String, Object> result = updateUser(Doc.of("updateUser", "c2",
+            "customData", Doc.of("dept", "42"), "$db", "admin"));
+        assertThat(result.get("ok")).as("customData-only updateUser must succeed (mongod allows it): " + result)
+            .isEqualTo(1.0);
+
+        Map<String, Object> doc = userDoc("admin.c2");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> customData = (Map<String, Object>) doc.get("customData");
+        assertThat(customData.get("dept")).isEqualTo("42");
+        @SuppressWarnings("unchecked")
+        Object storedKeyAfter = ((Map<String, Object>) credentialsOf("admin.c2").get("SCRAM-SHA-256")).get("storedKey");
+        assertThat(storedKeyAfter).as("credentials must be untouched by a customData-only update")
+            .isEqualTo(storedKeyBefore);
+    }
+
+    @Test
+    void updateUserPwdChangePreservesCustomData() throws Exception {
+        Map<String, Object> created = updateUser(Doc.of("createUser", "c3", "pwd", "pw",
+            "roles", List.of(), "customData", Doc.of("keep", "me"), "$db", "admin"));
+        assertThat(created.get("ok")).as("createUser result: " + created).isEqualTo(1.0);
+
+        Map<String, Object> result = updateUser(Doc.of("updateUser", "c3", "pwd", "newpw", "$db", "admin"));
+        assertThat(result.get("ok")).as("updateUser result: " + result).isEqualTo(1.0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> customData = (Map<String, Object>) userDoc("admin.c3").get("customData");
+        assertThat(customData).as("a pwd change without customData must preserve the stored customData")
+            .isNotNull();
+        assertThat(customData.get("keep")).isEqualTo("me");
+    }
+
+    @Test
+    void malformedCustomDataIsBadValue() throws Exception {
+        createUser("c4", "pw");
+
+        Map<String, Object> updateResult = updateUser(Doc.of("updateUser", "c4",
+            "customData", "not-a-document", "$db", "admin"));
+        assertThat(updateResult.get("ok")).isEqualTo(0.0);
+        assertThat(updateResult.get("code")).isEqualTo(2);
+        assertThat(updateResult.get("codeName")).isEqualTo("BadValue");
+
+        Map<String, Object> createResult = updateUser(Doc.of("createUser", "c5", "pwd", "pw",
+            "roles", List.of(), "customData", "not-a-document", "$db", "admin"));
+        assertThat(createResult.get("ok")).isEqualTo(0.0);
+        assertThat(createResult.get("code")).isEqualTo(2);
+        assertThat(createResult.get("codeName")).isEqualTo("BadValue");
+    }
+
+    /**
+     * 2026-08-06 review finding: malformed field types used to escape as a raw
+     * ClassCastException out of the command handler instead of a mongod-style BadValue error.
+     */
+    @Test
+    void updateUserMalformedFieldTypesAreBadValueNotClassCastException() throws Exception {
+        createUser("m4", "pw");
+
+        for (Map<String, Object> bad : List.of(
+                 Doc.of("updateUser", "m4", "roles", "not-an-array", "$db", "admin"),
+                 Doc.of("updateUser", "m4", "pwd", List.of("not-a-string"), "$db", "admin"),
+                 Doc.of("updateUser", "m4", "mechanisms", "not-an-array", "$db", "admin"),
+                 Doc.of("updateUser", "m4", "pwd", "npw", "mechanisms", List.of(42), "$db", "admin"))) {
+            Map<String, Object> result = updateUser(bad);
+            assertThat(result.get("ok")).as("command must fail cleanly: " + bad + " -> " + result).isEqualTo(0.0);
+            assertThat(result.get("code")).as("BadValue expected for " + bad).isEqualTo(2);
+            assertThat(result.get("codeName")).isEqualTo("BadValue");
+        }
+    }
+
     @Test
     void updateUserUnknownUserIsCode11() throws Exception {
         Map<String, Object> result = updateUser(
