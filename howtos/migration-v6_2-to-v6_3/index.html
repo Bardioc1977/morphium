@@ -12,13 +12,13 @@
         <meta name="author" content="Morphium Development Team">
       
       
-        <link rel="canonical" href="https://sboesebeck.github.io/morphium/howtos/aggregation-examples/">
+        <link rel="canonical" href="https://sboesebeck.github.io/morphium/howtos/migration-v6_2-to-v6_3/">
       
       
-        <link rel="prev" href="../migration-v5-to-v6/">
+        <link rel="prev" href="../migration-mongodb-to-poppydb/">
       
       
-        <link rel="next" href="../caching-examples/">
+        <link rel="next" href="../migration-v6_1-to-v6_2/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Aggregation Examples - Morphium Documentation</title>
+        <title>Upgrade v6.2→v6.3 - Morphium Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#aggregation-examples" class="md-skip">
+        <a href="#migration-v62x-v630" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Aggregation Examples
+              Upgrade v6.2→v6.3
             
           </span>
         </div>
@@ -314,7 +314,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../migration-v6_2-to-v6_3/" class="md-tabs__link">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -1133,10 +1133,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../migration-v6_2-to-v6_3/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade v6.2→v6.3
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1152,6 +1179,155 @@
   
 
       </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes-that-affect-real-mongodb-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes That Affect Real MongoDB Users
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes That Affect Real MongoDB Users">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mid-message-read-timeouts-now-close-the-connection-instead-of-silently-reusing-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mid-message read timeouts now close the connection instead of silently reusing it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#expired-pooled-connections-are-closed-on-release-not-returned-to-the-pool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expired pooled connections are closed on release, not returned to the pool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pooleddriver-re-seeds-from-the-host-list-after-a-full-outage-233" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PooledDriver re-seeds from the host list after a full outage (#233)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes-in-inmemorydriver-poppydb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes in InMemoryDriver / PoppyDB
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations-the-70-removal-wave-218" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecations — the 7.0-removal wave (#218)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-dualchannelmessaging-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: DualChannelMessaging (Beta)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-poppydb-production-readiness-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: PoppyDB — production-readiness features
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-inmemorydriver-aggregation-query-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: InMemoryDriver aggregation &amp; query surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-messaging-improvements-all-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: Messaging improvements (all implementations)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1217,19 +1393,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../aggregation-examples/" class="md-nav__link">
         
   
   
@@ -1245,7 +1412,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -2083,6 +2249,141 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes-that-affect-real-mongodb-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes That Affect Real MongoDB Users
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking Changes That Affect Real MongoDB Users">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mid-message-read-timeouts-now-close-the-connection-instead-of-silently-reusing-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mid-message read timeouts now close the connection instead of silently reusing it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#expired-pooled-connections-are-closed-on-release-not-returned-to-the-pool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expired pooled connections are closed on release, not returned to the pool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pooleddriver-re-seeds-from-the-host-list-after-a-full-outage-233" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PooledDriver re-seeds from the host list after a full outage (#233)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes-in-inmemorydriver-poppydb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes in InMemoryDriver / PoppyDB
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations-the-70-removal-wave-218" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecations — the 7.0-removal wave (#218)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-dualchannelmessaging-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: DualChannelMessaging (Beta)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-poppydb-production-readiness-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: PoppyDB — production-readiness features
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-inmemorydriver-aggregation-query-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: InMemoryDriver aggregation &amp; query surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-messaging-improvements-all-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New: Messaging improvements (all implementations)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -2101,116 +2402,171 @@
   
 
 
-<h1 id="aggregation-examples">Aggregation Examples<a class="headerlink" href="#aggregation-examples" title="Permanent link">&para;</a></h1>
-<p>These examples use <code>Aggregator&lt;T,R&gt;</code> and <code>Expr</code> to build pipelines fluently.</p>
-<p>Imports used
-<div class="language-java highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">de.caluga.morphium.aggregation.Aggregator</span><span class="p">;</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">de.caluga.morphium.aggregation.Expr</span><span class="p">;</span>
-</span></code></pre></div></p>
-<p>Creating an Aggregator: input and output types</p>
+<h1 id="migration-v62x-v630">Migration v6.2.x → v6.3.0<a class="headerlink" href="#migration-v62x-v630" title="Permanent link">&para;</a></h1>
+<p>This guide covers breaking changes, deprecations, and the headline new features when upgrading
+from Morphium 6.2.x to 6.3.0. 6.3.0 is a large release, dominated by InMemoryDriver/PoppyDB
+correctness and production-readiness work; if you only use Morphium against real MongoDB and
+never touch the embedded driver or PoppyDB, most of this guide does not apply to you — skip to
+<a href="#breaking-changes-that-affect-real-mongodb-users">Breaking Changes That Affect Real MongoDB Users</a>
+and <a href="#new-dualchannelmessaging-beta">New: DualChannelMessaging</a>.</p>
+<p>No dependency version bumps in this release (Netty/BSON/SLF4J/Logback are unchanged from 6.2.10).</p>
+<h2 id="breaking-changes-that-affect-real-mongodb-users">Breaking Changes That Affect Real MongoDB Users<a class="headerlink" href="#breaking-changes-that-affect-real-mongodb-users" title="Permanent link">&para;</a></h2>
+<h3 id="mid-message-read-timeouts-now-close-the-connection-instead-of-silently-reusing-it">Mid-message read timeouts now close the connection instead of silently reusing it<a class="headerlink" href="#mid-message-read-timeouts-now-close-the-connection-instead-of-silently-reusing-it" title="Permanent link">&para;</a></h3>
+<p>A socket timeout that struck mid-reply (header consumed, body still in flight) used to leave the
+connection desynchronized but still pooled — the next borrower would see cryptic <code>Illegal opcode</code>
+errors or a <code>null</code> reply. The driver now detects this case and closes the connection instead of
+retrying/pooling it. <strong>What to change:</strong> nothing in your code, but if your logs previously showed
+sporadic <code>Illegal opcode ...</code> errors under load, they should disappear; if you see more connection
+churn than before under timeout-heavy conditions, that is this fix working as intended, not a
+regression.</p>
+<h3 id="expired-pooled-connections-are-closed-on-release-not-returned-to-the-pool">Expired pooled connections are closed on release, not returned to the pool<a class="headerlink" href="#expired-pooled-connections-are-closed-on-release-not-returned-to-the-pool" title="Permanent link">&para;</a></h3>
+<p>Previously only the heartbeat's expiry sweep removed connections past
+<code>maxConnectionLifetime</code>/<code>maxConnectionIdleTime</code>; a connection could sit in the pool one sweep
+interval past its expiry. No API change, but expect pool size to converge to its minimum faster
+after a connection burst.</p>
+<h3 id="pooleddriver-re-seeds-from-the-host-list-after-a-full-outage-233"><code>PooledDriver</code> re-seeds from the host list after a full outage (#233)<a class="headerlink" href="#pooleddriver-re-seeds-from-the-host-list-after-a-full-outage-233" title="Permanent link">&para;</a></h3>
+<p>If every replica-set member became unreachable for long enough, the driver previously stayed
+permanently dead (<code>No primary node found</code>) even after the cluster recovered, requiring an
+application restart. It now re-seeds from the configured host list and resumes discovery on its
+own. No action needed — this only removes a failure mode.</p>
+<h2 id="breaking-changes-in-inmemorydriver-poppydb">Breaking Changes in InMemoryDriver / PoppyDB<a class="headerlink" href="#breaking-changes-in-inmemorydriver-poppydb" title="Permanent link">&para;</a></h2>
+<p>These only affect you if you run tests against the InMemoryDriver (<code>-Dmorphium.driver=inmem</code>) or
+run PoppyDB as a MongoDB-compatible server. All of them make the emulation <em>more</em> correct — i.e.
+closer to how real MongoDB always behaved — so if you only run tests against real MongoDB, none of
+this applies; if you run the same tests against InMemoryDriver/PoppyDB too, some may start failing
+because they were relying on previously-wrong lenient behavior.</p>
 <ul>
-<li>Signature: <code>morphium.createAggregator(IncomingEntity.class, OutputType.class)</code></li>
-<li>Incoming entity (<code>T</code>): determines the MongoDB collection and the available fields. This type must be a Morphium <code>@Entity</code>; Morphium uses its mapping to resolve the backing collection and validate field references.</li>
-<li>Output type (<code>R</code>): the class instantiated for each aggregation result. Use a POJO with matching fields/getters or <code>Map</code> for ad‑hoc shapes.</li>
+<li><strong><code>$in</code>/<code>$nin</code> reject scalar and <code>null</code> operands</strong> instead of silently wrapping them into a
+  single-element list (<code>{$in: "a"}</code> no longer behaves like <code>{$in: ["a"]}</code>) — this also reverts the
+  6.2.9 leniency for the <code>$in</code> aggregation expression specifically. Real MongoDB always rejected
+  this (<code>BadValue: $in needs an array</code>).</li>
+<li><strong><code>$project</code> inclusion mode (<code>{field: 1}</code>) actually restricts output to selected fields now.</strong>
+  It was a no-op before — only exclusion (<code>{field: 0}</code>) had any effect — so any test asserting a
+  full document came back from an inclusion-style <code>$project</code> will now correctly see only the
+  projected fields.</li>
+<li><strong>BSON document size limit (16MB) is enforced</strong> on insert and on the <em>result</em> of
+  update/replace/upsert operations, matching mongod's <code>BSONObjectTooLarge</code> (10334). Previously
+  unenforced (and advertised as a fantasy 128MB by the embedded driver). Configurable via
+  <code>--max-bson-size</code> / <code>PoppyDB.setMaxBsonObjectSize(...)</code> / <code>InMemoryDriver.setMaxBsonObjectSize(...)</code>
+  (<code>0</code> = off).</li>
+<li><strong><code>maxMessageSizeBytes</code> (48MB) is respected end-to-end.</strong> Oversized write commands are now split
+  into sub-batches instead of being sent as one huge OP_MSG that would previously get the
+  connection closed by any real server (or PoppyDB's own decoder).</li>
+<li><strong>Creating a time-series collection fails loudly</strong> (<code>CommandNotSupported</code>, code 115) instead of
+  silently creating a plain collection with none of the promised behavior. Real time-series
+  support is tracked for 7.0 (#261/#262).</li>
+<li><strong>Auth commands fail instead of pretending to succeed.</strong> <code>saslStart</code>, X.509 <code>authenticate</code>,
+  <code>createUser</code>, <code>createRole</code> used to be empty stubs that the dispatch machinery resolved to
+  <code>{ok: 1.0}</code> — any client "authenticated" with any or no credentials. They now fail explicitly
+  until real SCRAM/role support is in place (SCRAM verification and <code>createUser</code> landed later in
+  6.3.0, see below — <code>createRole</code>/authorization enforcement are still not implemented).</li>
+<li><strong>Memory watermark rejects writes above 90% post-GC heap</strong> by default (<code>ExceededMemoryLimit</code>,
+  code 146 — a retryable/backpressure signal). If your tests or embedded usage push large volumes
+  into an undersized heap, you may now see this error where you previously got an <code>OutOfMemoryError</code>
+  or degraded performance. Tune with <code>--memory-warn</code>/<code>--memory-reject</code> (PoppyDB) or
+  <code>setMemoryWatermarks(...)</code> (embedded); <code>100</code> disables the corresponding threshold. Updates,
+  deletes, and TTL expiry are always allowed (the drain paths must keep working).</li>
 </ul>
-<p>Fail‑fast field validation</p>
+<h2 id="deprecations-the-70-removal-wave-218">Deprecations — the 7.0-removal wave (#218)<a class="headerlink" href="#deprecations-the-70-removal-wave-218" title="Permanent link">&para;</a></h2>
+<p>Members confirmed for removal in 7.0 now carry <code>@Deprecated(since = "6.3", forRemoval = true)</code>,
+so IDEs flag every usage a full minor release ahead of time. This is a pure annotation/Javadoc
+change — nothing behaves differently in 6.3.0, and everything listed still works. Covered:</p>
 <ul>
-<li>Morphium is designed to help you “fail fast”. When you reference a field that does not exist on the entity, Morphium throws an exception instead of silently ignoring it.</li>
-<li>Prefer using enums or the lambda‑based field extractor to avoid typos when building queries and matches inside aggregations. See <a href="../field-names/">Field Names Without String Literals</a>.</li>
+<li>Flat <code>MorphiumConfig</code> setters/getters — use the <code>Settings</code> sub-objects instead
+  (<code>connectionSettings()</code>, <code>objectMappingSettings()</code>, <code>messagingSettings()</code>, ...).</li>
+<li><code>MorphiumBase.set…</code>/<code>unsetQ…</code> variants.</li>
+<li>The legacy <code>SingleCollectionMessaging</code> constructors — use <code>Morphium.createMessaging()</code>.</li>
+<li><code>Query.complexQuery</code>, <code>Query.getById</code>, <code>Query.textSearch</code>.</li>
+<li><code>Msg.name</code>.</li>
+<li><code>MorphiumMessaging.setProcessMultiple</code> — use <code>setWindowSize(int)</code> instead.</li>
+<li><code>MongoBob</code>.</li>
+<li><code>@UseIfnull</code> — use <code>@IgnoreNullFromDB</code>.</li>
 </ul>
-<p>1) Grouping with sums and averages
-<div class="language-java highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">match</span><span class="p">(</span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;OPEN&quot;</span><span class="p">));</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">agg</span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;$customerId&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">avg</span><span class="p">(</span><span class="s">&quot;avgAmount&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">count</span><span class="p">(</span><span class="s">&quot;count&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">();</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">agg</span><span class="p">.</span><span class="na">sort</span><span class="p">(</span><span class="s">&quot;-total&quot;</span><span class="p">);</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">perCustomer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>2) Project computed fields and unwind arrays
-<div class="language-java highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">unwind</span><span class="p">(</span><span class="s">&quot;$items&quot;</span><span class="p">);</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">agg</span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">fields</span><span class="p">(</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="n">Expr</span><span class="p">.</span><span class="na">include</span><span class="p">(</span><span class="s">&quot;_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">),</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;sku&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;items.sku&quot;</span><span class="p">)),</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;revenue&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">multiply</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;items.price&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;items.qty&quot;</span><span class="p">)))</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">));</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">agg</span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;$sku&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$revenue&quot;</span><span class="p">).</span><span class="na">count</span><span class="p">(</span><span class="s">&quot;sold&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">).</span><span class="na">end</span><span class="p">();</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">perSku</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>3) Lookup (join) with another collection
-<div class="language-java highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">lookup</span><span class="p">(</span><span class="s">&quot;customers&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;customerId&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;customer&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">);</span><span class="w"> </span><span class="c1">// simple local/foreign join</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">agg</span><span class="p">.</span><span class="na">unwind</span><span class="p">(</span><span class="s">&quot;$customer&quot;</span><span class="p">);</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">agg</span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;amount&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;customer.name&quot;</span><span class="p">);</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">ordersWithCustomer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>4) Bucketing numeric values
-<div class="language-java highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kd">var</span><span class="w"> </span><span class="n">boundaries</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">intExpr</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">intExpr</span><span class="p">(</span><span class="mi">50</span><span class="p">),</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">intExpr</span><span class="p">(</span><span class="mi">100</span><span class="p">),</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">intExpr</span><span class="p">(</span><span class="mi">200</span><span class="p">));</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">agg</span><span class="p">.</span><span class="na">bucket</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;amount&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">boundaries</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="s">&quot;count&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="s">&quot;sum&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">sum</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;amount&quot;</span><span class="p">))</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">));</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">byAmountBucket</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>5) Automatic bucketing
-<div class="language-java highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">bucketAuto</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;amount&quot;</span><span class="p">),</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sum&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">sum</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;amount&quot;</span><span class="p">))),</span><span class="w"> </span><span class="n">Aggregator</span><span class="p">.</span><span class="na">BucketGranularity</span><span class="p">.</span><span class="na">POWERSOF2</span><span class="p">);</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buckets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>6) Sort by count and top‑N
-<div class="language-java highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">sortByCount</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;customerId&quot;</span><span class="p">));</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">agg</span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">10</span><span class="p">);</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">topCustomers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>7) Graph lookup (hierarchical relations)
-<div class="language-java highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Employee</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Employee</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">agg</span><span class="p">.</span><span class="na">graphLookup</span><span class="p">(</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="n">Employee</span><span class="p">.</span><span class="na">class</span><span class="p">,</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;$reportsTo&quot;</span><span class="p">),</span><span class="w"> </span><span class="c1">// start with</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="s">&quot;_id&quot;</span><span class="p">,</span><span class="w">                   </span><span class="c1">// connectFrom</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="s">&quot;reportsTo&quot;</span><span class="p">,</span><span class="w">             </span><span class="c1">// connectTo</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="s">&quot;hierarchy&quot;</span><span class="p">,</span><span class="w">             </span><span class="c1">// output array</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="mi">5</span><span class="p">,</span><span class="w">                        </span><span class="c1">// max depth</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="s">&quot;depth&quot;</span><span class="p">,</span><span class="w">                 </span><span class="c1">// depth field</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="kc">null</span><span class="w">                      </span><span class="c1">// optional match filter</span>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="p">);</span>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hierarchy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>8) Faceted search
-<div class="language-java highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kd">var</span><span class="w"> </span><span class="n">base</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p">.</span><span class="na">match</span><span class="p">(</span><span class="n">morphium</span><span class="p">.</span><span class="na">createQueryFor</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">f</span><span class="p">(</span><span class="s">&quot;status&quot;</span><span class="p">).</span><span class="na">eq</span><span class="p">(</span><span class="s">&quot;OPEN&quot;</span><span class="p">));</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="kd">var</span><span class="w"> </span><span class="n">byCustomer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;$customerId&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">();</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="kd">var</span><span class="w"> </span><span class="n">byDay</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="n">Expr</span><span class="p">.</span><span class="na">fields</span><span class="p">(</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;day&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">dateToString</span><span class="p">(</span><span class="s">&quot;%Y-%m-%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Expr</span><span class="p">.</span><span class="na">field</span><span class="p">(</span><span class="s">&quot;created&quot;</span><span class="p">))),</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="n">Expr</span><span class="p">.</span><span class="na">include</span><span class="p">(</span><span class="s">&quot;amount&quot;</span><span class="p">)</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="p">))</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;$day&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">();</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="n">base</span><span class="p">.</span><span class="na">facet</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;byCustomer&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">byCustomer</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;byDay&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">byDay</span><span class="p">));</span>
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">Map</span><span class="o">&gt;</span><span class="w"> </span><span class="n">facets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">base</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>9) Typed result projection
-<div class="language-java highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SalesSummary</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">customerId</span><span class="p">;</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="kd">private</span><span class="w"> </span><span class="n">BigDecimal</span><span class="w"> </span><span class="n">total</span><span class="p">;</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="kd">private</span><span class="w"> </span><span class="kt">long</span><span class="w"> </span><span class="n">count</span><span class="p">;</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="c1">// getters/setters</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">}</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">Aggregator</span><span class="o">&lt;</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">SalesSummary</span><span class="o">&gt;</span><span class="w"> </span><span class="n">agg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">morphium</span><span class="p">.</span><span class="na">createAggregator</span><span class="p">(</span><span class="n">Order</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">SalesSummary</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">agg</span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;$customerId&quot;</span><span class="p">).</span><span class="na">sum</span><span class="p">(</span><span class="s">&quot;total&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;$amount&quot;</span><span class="p">).</span><span class="na">count</span><span class="p">(</span><span class="s">&quot;count&quot;</span><span class="p">).</span><span class="na">end</span><span class="p">();</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">List</span><span class="o">&lt;</span><span class="n">SalesSummary</span><span class="o">&gt;</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agg</span><span class="p">.</span><span class="na">aggregate</span><span class="p">();</span>
-</span></code></pre></div></p>
-<p>Tips
-- Use <code>Expr</code> helpers to build expressions (e.g., <code>Expr.field</code>, <code>Expr.sum</code>, <code>Expr.divide</code>, <code>Expr.multiply</code>)
-- Use <code>project</code> to rename or compute fields and limit document size
-- Use <code>limit</code> early in the pipeline where appropriate
-See also: <a href="../../developer-guide/">Developer Guide</a></p>
+<p><strong>What to change now (optional but recommended):</strong> search your codebase for the members above and
+migrate opportunistically. Nothing is urgent for 6.3.0 — this only matters before upgrading to 7.0.</p>
+<h2 id="new-dualchannelmessaging-beta">New: DualChannelMessaging (Beta)<a class="headerlink" href="#new-dualchannelmessaging-beta" title="Permanent link">&para;</a></h2>
+<p>A new, opt-in messaging implementation (<code>de.caluga.morphium.messaging.DualChannelMessaging</code>,
+<a href="https://github.com/sboesebeck/morphium/issues/265">#265</a>) targeting request/reply throughput on
+real MongoDB: it keeps Standard's simple single-collection layout for broadcast/topic traffic and
+adds a second, dedicated per-recipient collection with its own change-stream cursor purely for
+directed messages and answers — the second cursor is what actually gives <code>MultiCollectionMessaging</code>
+its capacity edge over Standard, not the per-topic split, and this isolates just that one mechanism
+on top of an otherwise unmodified Standard core.</p>
+<p>Enable it with a one-line config change:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">cfg</span><span class="p">.</span><span class="na">messagingSettings</span><span class="p">().</span><span class="na">setMessagingImplementation</span><span class="p">(</span><span class="s">&quot;DualChannelMessaging&quot;</span><span class="p">);</span>
+</span></code></pre></div>
+<p>Measured on MongoDB under sustained overload: <strong>+9% throughput and ~33% lower p50 latency than
+Standard</strong>, without <code>MultiCollectionMessaging</code>'s runaway-RTT failure mode under overload. On
+PoppyDB the second cursor makes no measurable throughput difference (PoppyDB's change-stream
+delivery is push-based and was never cursor-cadence-bound the way mongod's oplog-tailing is).</p>
+<p><strong>Before enabling in production:</strong> every participant on a given queue must run
+<code>DualChannelMessaging</code> — see the
+<a href="../messaging-implementations/#dual-channel-messaging-beta">Mixed-Cluster Requirement</a> and full
+measured numbers in <a href="../messaging-implementations/">Messaging Implementations</a>. Marked <code>@Beta</code>:
+behavior, collection layout, or API surface may change without a deprecation cycle.</p>
+<h2 id="new-poppydb-production-readiness-features">New: PoppyDB — production-readiness features<a class="headerlink" href="#new-poppydb-production-readiness-features" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>DevOps command surface</strong>: <code>db.currentOp()</code>/<code>killOp</code> (with a real op registry), <code>rs.conf()</code>,
+  <code>listCommands</code>, <code>hostInfo</code>, <code>connectionStatus</code>, <code>whatsmyuri</code>, real <code>serverStatus.connections</code>.
+  Fixes mongosh's admin helpers, which previously failed against PoppyDB.</li>
+<li><strong>Opt-in auth enforcement</strong> (<code>--auth</code>) with real server-side SCRAM-SHA-1/SHA-256 verification
+  (RFC 5802/7677) and a working <code>createUser</code>. Without <code>--auth</code>, behavior is unchanged (fully open).
+  Authorization is authentication-only for now — roles are stored but not evaluated.</li>
+<li><strong>TLS actually works now</strong> — it was silently broken (NPE on startup) whenever an <code>SSLContext</code> was
+  configured.</li>
+<li><strong><code>--log-level</code> option</strong> — the CLI jar no longer floods disks by logging everything at DEBUG by
+  default (root now defaults to <code>INFO</code>).</li>
+<li><strong>Replication correctness</strong>: index definitions are now replicated (previously documents only —
+  unique constraints, TTL, and index-backed queries silently didn't work on secondaries or after
+  failover); replication is now lossless and order-preserving; a long-standing election bug that
+  kept followers from ever starting replication is fixed.</li>
+<li><strong>Memory watermarks</strong> and <strong>BSON/message size enforcement</strong> — see Breaking Changes above.</li>
+</ul>
+<h2 id="new-inmemorydriver-aggregation-query-surface">New: InMemoryDriver aggregation &amp; query surface<a class="headerlink" href="#new-inmemorydriver-aggregation-query-surface" title="Permanent link">&para;</a></h2>
+<p>A large batch of previously-missing or silently-wrong aggregation/query behavior is now
+implemented, primarily useful for anyone testing MongoDB-heavy pipelines against the InMemoryDriver
+or PoppyDB instead of a real server:</p>
+<ul>
+<li>New pipeline stages: <code>$documents</code>, <code>$densify</code>, <code>$fill</code>, the full <code>$setWindowFields</code> window-function
+  surface (including range windows), a working <code>$merge</code>, and a real <code>$out</code> (previously a no-op).</li>
+<li>~40 additional <code>Expr</code> operators implemented (<code>$map</code>, date arithmetic, byte/codepoint string
+  operators, <code>$sortArray</code>, <code>$round</code>, <code>$median</code>/<code>$percentile</code>, and more).</li>
+<li>Positional update operators <code>$</code>, <code>$[]</code>, <code>$[&lt;identifier&gt;]</code> with <code>arrayFilters</code> (also reachable from
+  the high-level API via the new <code>Query.setArrayFilters(...)</code>), and <code>$bit</code>.</li>
+<li><code>dbHash</code>, <code>validate</code>, <code>currentOp</code>, real <code>serverStatus</code>, and the MongoDB-8.0-style top-level
+  <code>bulkWrite</code> command.</li>
+</ul>
+<p>If any of your tests were relying on a previously-stubbed or silently-wrong behavior in this area
+(several dozen correctness fixes shipped alongside the new features — see <code>CHANGELOG.md</code>'s
+<code>[Unreleased]</code>/6.3.0 section for the full list), re-run your suite against InMemoryDriver/PoppyDB
+after upgrading.</p>
+<h2 id="new-messaging-improvements-all-implementations">New: Messaging improvements (all implementations)<a class="headerlink" href="#new-messaging-improvements-all-implementations" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Configurable <code>messagingDefaultTtl</code> (default 30s, was hardcoded) and <code>messagingFallbackPollInterval</code>
+  (default 10s) — tune the poll interval below your shortest message TTL.</li>
+<li>Requeued messages (cleared <code>processedBy</code> via a plain DB update) are now picked up event-driven
+  instead of waiting for the next fallback poll.</li>
+<li>Change-stream liveness now drives the fallback poll directly — a silent stream triggers an
+  immediate poll instead of waiting for the next timer tick.</li>
+<li>A bounded processing-decision trace aids answer-timeout diagnostics (dumped only on timeout, not
+  during normal operation).</li>
+</ul>
+<h2 id="migration-checklist">Migration Checklist<a class="headerlink" href="#migration-checklist" title="Permanent link">&para;</a></h2>
+<ol>
+<li>[ ] <strong>Search for <code>forRemoval = true</code> candidates</strong> (see Deprecations above) and migrate
+   opportunistically — not urgent for 6.3.0, but IDEs will now flag them.</li>
+<li>[ ] <strong>If you test against InMemoryDriver/PoppyDB</strong>, re-run your suite — several dozen
+   correctness fixes may surface previously-masked test bugs (see the two Breaking Changes
+   sections above).</li>
+<li>[ ] <strong>If you run PoppyDB in production</strong>, review the new <code>--auth</code>, <code>--memory-warn</code>/
+   <code>--memory-reject</code>, and <code>--log-level</code> options — defaults preserve prior (open, unbounded, DEBUG)
+   behavior, so nothing changes unless you opt in.</li>
+<li>[ ] <strong>If you store documents that could exceed 16MB</strong> or write batches that could exceed 48MB
+   against InMemoryDriver/PoppyDB, verify you're within the now-enforced limits (or raise them).</li>
+<li>[ ] <strong>Optional:</strong> if request/reply throughput is your bottleneck on real MongoDB and you can run
+   a homogeneous cluster, evaluate the beta <code>DualChannelMessaging</code> implementation.</li>
+<li>[ ] No dependency version changes — nothing to reconcile in your own <code>pom.xml</code>.</li>
+</ol>
 
 
 
