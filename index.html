@@ -22,7 +22,7 @@
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="assets/brand/morphium-mark.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -53,6 +53,8 @@
       
     
     
+      <link rel="stylesheet" href="assets/extra.css">
+    
     <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
@@ -69,7 +71,7 @@
     
     
     
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="deep-purple">
   
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
@@ -98,8 +100,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="." title="Morphium Documentation" class="md-header__button md-logo" aria-label="Morphium Documentation" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="assets/brand/morphium-mark-header.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -129,7 +130,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="deep-purple"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
     
       <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
@@ -139,7 +140,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="deep-purple"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
     
       <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
@@ -447,8 +448,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="." title="Morphium Documentation" class="md-nav__button md-logo" aria-label="Morphium Documentation" data-md-component="logo">
       
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <img src="assets/brand/morphium-mark-header.svg" alt="logo">
 
     </a>
     Morphium Documentation
@@ -535,6 +535,17 @@
       On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#poppydb-mongodbcompatible-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PoppyDB — MongoDB‑compatible Server
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#new-here-start-here" class="md-nav__link">
@@ -1196,6 +1207,34 @@
   
   
     <li class="md-nav__item">
+      <a href="howtos/poppydb-admin-handbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Handbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="howtos/migration-mongodb-to-poppydb/" class="md-nav__link">
         
   
@@ -1820,6 +1859,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="spring-boot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spring Boot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2229,6 +2296,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#poppydb-mongodbcompatible-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PoppyDB — MongoDB‑compatible Server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#new-here-start-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2354,7 +2432,29 @@
 
 
 <h1 id="morphium-v6-documentation">Morphium v6 Documentation<a class="headerlink" href="#morphium-v6-documentation" title="Permanent link">&para;</a></h1>
+<p align="center">
+  <img class="logo-light" src="assets/brand/morphium-logo.svg" alt="Morphium" width="640">
+  <img class="logo-dark" src="assets/brand/morphium-logo-dark.svg" alt="Morphium" width="640">
+</p>
+
 <p>Morphium is a Java 21+ Object Document Mapper (ODM) and MongoDB‑backed messaging system. It includes a custom MongoDB wire‑protocol driver, distributed caching, and a topic‑based message queue.</p>
+<hr />
+<p align="center">
+  <a href="poppydb/"><img class="logo-light" src="assets/brand/poppydb-logo.svg" alt="PoppyDB" width="480"><img class="logo-dark" src="assets/brand/poppydb-logo-dark.svg" alt="PoppyDB" width="480"></a>
+</p>
+
+<h2 id="poppydb-mongodbcompatible-server">PoppyDB — MongoDB‑compatible Server<a class="headerlink" href="#poppydb-mongodbcompatible-server" title="Permanent link">&para;</a></h2>
+<p>PoppyDB is the project's second product: a standalone, self‑contained server that speaks the
+MongoDB wire protocol — any MongoDB client (Java, Python, Node.js, Go, <code>mongosh</code>, ...) can
+connect to it. Perfect for CI/CD pipelines, integration testing, and lightweight deployments.</p>
+<ul>
+<li><strong>Replica Sets</strong> with Raft‑based failover</li>
+<li>Opt‑in <strong>Authentication (SCRAM)</strong> and <strong>TLS</strong></li>
+<li><strong>Persistence</strong> via snapshots</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>java<span class="w"> </span>-jar<span class="w"> </span>poppydb-&lt;version&gt;-cli.jar<span class="w"> </span>--port<span class="w"> </span><span class="m">27017</span>
+</span></code></pre></div>
+<p>→ <strong><a href="poppydb/">PoppyDB Documentation</a></strong> · <a href="howtos/poppydb-deployment/">Production Deployment Playbook</a> · <a href="howtos/migration-mongodb-to-poppydb/">Migrating from MongoDB</a></p>
 <hr />
 <h2 id="new-here-start-here">🚀 New Here? Start Here!<a class="headerlink" href="#new-here-start-here" title="Permanent link">&para;</a></h2>
 <p><strong>Learning path for beginners:</strong></p>
@@ -2377,11 +2477,7 @@
 - <strong><a href="developer-testing-guide/">Developer Testing Guide</a></strong> - How to run and write tests, MultiDriverTestBase, runtests.sh
 - <strong><a href="test-runner/">Test Runner</a></strong> - Quick reference for the <code>runtests.sh</code> script
 - <strong><a href="howtos/inmemory-driver/">InMemory Driver</a></strong> - Embedded in-memory driver for unit tests (no MongoDB installation required!)
-- <strong><a href="poppydb/">PoppyDB</a></strong> - Standalone MongoDB-compatible server that speaks the wire protocol (formerly MorphiumServer)
-  - Perfect for CI/CD pipelines, integration testing, and microservices development
-  - Any MongoDB client (Java, Python, Node.js, Go, etc.) can connect to it
-  - Supports <strong>Replica Sets</strong> with Raft failover, <strong>opt-in Authentication (SCRAM) &amp; TLS</strong>, and <strong>Persistence (Snapshots)</strong>
-  - Run with: <code>java -jar poppydb/target/poppydb-&lt;version&gt;-cli.jar --port 27017</code></p>
+- <strong><a href="poppydb/">PoppyDB</a></strong> - Standalone MongoDB-compatible server that speaks the wire protocol — see the <a href="#poppydb-mongodbcompatible-server">PoppyDB section</a> above</p>
 <h2 id="production-deployment">Production Deployment<a class="headerlink" href="#production-deployment" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="production-deployment-guide/">Production Deployment Guide</a></strong> - Complete guide for deploying Morphium in production environments</li>
@@ -2414,6 +2510,14 @@ any of the following. These are additional, opt-in modules built on top of the c
   Quarkus applications via a CDI producer, <code>@ConfigMapping</code>, <code>@MorphiumTransactional</code>, health
   checks, Dev Services, Dev UI, and build-time Jakarta Data repository generation via Gizmo
   - GraalVM native-image support and <code>MorphiumId</code> JSON (de)serialization out of the box
+  - Zero dependency from the core: build with <code>-DskipExtensions</code> for a core-only artifact
+- <strong><a href="spring-boot/">Spring Boot</a></strong> - Optional module integrating Morphium into
+  <a href="https://spring.io/projects/spring-boot">Spring Boot</a> applications via auto-configuration,
+  type-safe <code>@ConfigurationProperties</code> (<code>morphium.*</code>), <code>@MorphiumTransactional</code> via AspectJ, an
+  Actuator health indicator, and Jakarta Data <code>@Repository</code> interfaces backed by JDK dynamic
+  proxies at runtime (no build-time bytecode generation, unlike <code>quarkus-morphium</code>'s Gizmo
+  approach)
+  - No Docker/Testcontainers needed — all tests run against Morphium's <code>InMemDriver</code>
   - Zero dependency from the core: build with <code>-DskipExtensions</code> for a core-only artifact</p>
 <p>Minimum requirements
 - Java 21+
@@ -2434,9 +2538,9 @@ any of the following. These are additional, opt-in modules built on top of the c
 <p>Benefits
 - Tailored to Morphium’s mapping and lifecycle needs; minimal impedance with Morphium’s object mapper.
 - Full control over retry/failover semantics and performance trade‑offs.
-- SSL/TLS support for secure connections (since v6.0).</p>
+- SSL/TLS support for secure connections (since v6.0).
+- MongoDB Atlas support via <code>mongodb+srv://</code> connection strings (DNS SRV/TXT resolution, TLS enabled automatically); see the <a href="ssl-tls/#mongodb-atlas-example">SSL/TLS guide</a>.</p>
 <p>Limitations
-- No MongoDB Atlas support.
 - Some advanced features of the official driver are not available.</p>
 
 
