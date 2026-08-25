@@ -136,11 +136,11 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
         customMappers.put(AtomicBoolean.class, new AtomicBooleanMapper());
         customMappers.put(AtomicInteger.class, new AtomicIntegerMapper());
         customMappers.put(AtomicLong.class, new AtomicLongMapper());
-        customMappers.put(LocalDate.class, new LocalDateMapper());
-        customMappers.put(LocalTime.class, new LocalTimeMapper());
-        customMappers.put(LocalDateTime.class, new LocalDateTimeMapper());
+        customMappers.put(LocalDate.class, new LocalDateMapper(this::useBsonDateForJavaTime));
+        customMappers.put(LocalTime.class, new LocalTimeMapper(this::useBsonDateForJavaTime));
+        customMappers.put(LocalDateTime.class, new LocalDateTimeMapper(this::useBsonDateForJavaTime));
         customMappers.put(Timestamp.class, new TimestampMapper());
-        customMappers.put(Instant.class, new InstantMapper());
+        customMappers.put(Instant.class, new InstantMapper(this::useBsonDateForJavaTime));
         customMappers.put(BigDecimal.class, new BigDecimalMapper());
         customMappers.put(BigInteger.class, new BigIntegerTypeMapper());
         customMappers.put(Geo.class, new BsonGeoMapper());
@@ -193,6 +193,19 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
     @Override
     public Morphium getMorphium() {
         return morphium;
+    }
+
+    /**
+     * Queried fresh on every {@code marshall()} call by the four java.time mappers (they hold a
+     * {@link java.util.function.BooleanSupplier}, not a copied boolean), so toggling
+     * {@code ObjectMappingSettings#setUseBsonDateForJavaTime(boolean)} takes effect on this
+     * already-constructed mapper. A value copied at construction time could never work: the
+     * mappers are registered in this class's constructor, before {@link #setMorphium(Morphium)}
+     * has supplied the config they would read it from.
+     */
+    private boolean useBsonDateForJavaTime() {
+        return morphium != null && morphium.getConfig() != null
+            && morphium.getConfig().objectMappingSettings().isUseBsonDateForJavaTime();
     }
 
     /**
@@ -1006,6 +1019,14 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
         MorphiumTypeMapper classMapper = customMappers.get(cls);
 
         if (classMapper != null) {
+            // #334: container elements of custom-mapped types whose marshall() returns a bare
+            // scalar are stored as a {"value": scalar} wrapper (possibly with class_name for
+            // polymorphic containers). The mapper's unmarshall() expects the bare scalar, not
+            // the wrapper map — unwrap before handing it over.
+            if (isScalarValueWrapper(objectMap)) {
+                return (T) unmarshallScalarWrapper(classMapper, objectMap);
+            }
+
             return (T) classMapper.unmarshall(objectMap);
         }
 
@@ -1616,6 +1637,52 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
         return retMap;
     }
 
+    /**
+     * Detects the wrapper shape {@code {"value": scalar}} that {@link #serialize(Object)}
+     * produces for custom-mapped types whose {@code marshall()} returns a bare scalar instead
+     * of a Map (#334). Only the key {@code value} — plus an optional
+     * {@code class_name}/{@code className} — qualifies. Any other key means this is regular
+     * document data that merely contains a field named {@code value} and must not be unwrapped.
+     */
+    private static boolean isScalarValueWrapper(Map<String, Object> map) {
+        if (!map.containsKey("value")) {
+            return false;
+        }
+
+        for (String key : map.keySet()) {
+            if (!"value".equals(key) && !"class_name".equals(key) && !"className".equals(key)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Unwraps a scalar wrapper (see {@link #isScalarValueWrapper(Map)}) and hands the bare
+     * scalar to the custom mapper. If the wrapper carries a class_name, the map could also be
+     * the legitimate output of a Map-returning custom mapper that happens to marshall to
+     * {@code {"value": ...}} (serialize() appends class_name to Map results) — so the whole
+     * map is offered to the mapper first and the unwrapped scalar is only used as fallback.
+     */
+    @SuppressWarnings("unchecked")
+    private Object unmarshallScalarWrapper(MorphiumTypeMapper mapper, Map<String, Object> wrapper) {
+        if (wrapper.containsKey("class_name") || wrapper.containsKey("className")) {
+            try {
+                return mapper.unmarshall(wrapper);
+            } catch (RuntimeException e) {
+                // The mapper could not take the whole map, so this is the scalar wrapper shape
+                // after all. Logged because the same catch would swallow a genuine mapper error
+                // on corrupt data, and that would otherwise surface far from its cause.
+                log.debug("Custom mapper rejected the wrapper map, falling back to the wrapped scalar", e);
+                return mapper.unmarshall(wrapper.get("value"));
+            }
+        }
+
+        // no class_name: serialize() only ever writes this shape for scalar-returning mappers
+        return mapper.unmarshall(wrapper.get("value"));
+    }
+
     private Object unmarshallInternal(Object val) {
         if (val instanceof Map) {
             Map<String, Object> mapVal = (Map<String, Object>) val;
@@ -1732,6 +1799,18 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
                     }
 
                     continue;
+                }
+
+                // #334: legacy scalar wrapper {"value": x} — written for container elements of
+                // custom-mapped types whose marshall() returns a bare scalar. Unwrap it back to
+                // the declared element type. Read side only — the write format stays unchanged.
+                if (elementClass != null) {
+                    MorphiumTypeMapper elementMapper = customMappers.get(ClassUtils.primitiveToWrapper(elementClass));
+
+                    if (elementMapper != null && isScalarValueWrapper((Map<String, Object>) val)) {
+                        toFillIn.add(unmarshallScalarWrapper(elementMapper, (Map<String, Object>) val));
+                        continue;
+                    }
                 }
 
                 if (listType != null) {
@@ -1971,6 +2050,18 @@ public class ObjectMapperImpl implements MorphiumObjectMapper {
             Object val = entry.getValue();
 
             if (val instanceof Map) {
+                // #334: legacy scalar wrapper {"value": x} for custom-mapped value types — unwrap
+                // back to the declared value type. Wrappers carrying a class_name are left to
+                // unmarshallInternal below, which resolves the mapper via the class_name.
+                if (elementClass != null && !((Map<String, Object>) val).containsKey("class_name") && !((Map<String, Object>) val).containsKey("className")) {
+                    MorphiumTypeMapper valueMapper = customMappers.get(ClassUtils.primitiveToWrapper(elementClass));
+
+                    if (valueMapper != null && isScalarValueWrapper((Map<String, Object>) val)) {
+                        toFillIn.put(key, unmarshallScalarWrapper(valueMapper, (Map<String, Object>) val));
+                        continue;
+                    }
+                }
+
                 if (elementClass != null) {
                     //have a list of something
                     if (Map.class.isAssignableFrom(elementClass)) {

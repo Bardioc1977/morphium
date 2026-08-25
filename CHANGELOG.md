@@ -8,6 +8,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Opt-in: `java.time` types can be stored as native BSON Date (`useBsonDateForJavaTime`)
+`ObjectMappingSettings#setUseBsonDateForJavaTime(boolean)` (default `false`) makes
+`LocalDate`, `LocalTime`, `LocalDateTime` and `Instant` marshal to a native BSON Date
+(type `0x09`) instead of Morphium's own per-type formats — epoch-day / nano-of-day longs for
+`LocalDate`/`LocalTime`, `Doc` sub-documents for `LocalDateTime`/`Instant`. The written value is
+bit-compatible with the official MongoDB Java driver's `org.bson.codecs.jsr310` codecs.
+
+`LocalDate` is anchored at UTC start-of-day and `LocalTime` at epoch day 0 UTC, the same
+convention the official driver's codecs use. Sub-millisecond precision is lost when the flag is
+on, which is the same trade-off the driver makes for these types.
+
+**Scalar fields only.** A scalar field becomes a bare BSON Date, so `mongosh` shows `ISODate` and
+native date range/sort queries and TTL indexes work directly on it. Elements of a
+`List`/array/`Map` field do not: they keep the `{"value": …}` wrapper the generic serialization
+path produces for every scalar-returning custom mapper, with a native `Date` inside. Those values
+round-trip correctly, but a native date query against a container has to address `field.value`,
+and an index has to be declared on that sub-path.
+
+Also not covered by the flag: the update APIs (`set()`, `push()`, `addToSet()`), which route
+through `MorphiumWriterImpl#marshallIfNecessary` and never consult the custom mappers, so they
+keep writing the legacy format at either setting — pre-existing behaviour, tracked separately in
+[#335](https://github.com/sboesebeck/morphium/issues/335).
+
+> **Do not enable this for a field you also update through the query API.** With the flag on,
+> `store()` writes a native Date into such a field while `set()`/`push()` write the legacy shape,
+> so one field holds two different BSON types. MongoDB's range operators are type-bracketed —
+> `$lt`/`$lte`/`$gt`/`$gte` do not compare across BSON types — so a range query silently **drops**
+> the documents written by the update path instead of ordering them oddly. Measured against a real
+> mongod: 1 of 2 documents matched. Sweep-style queries ("everything overdue", "every expired
+> lease") are the dangerous case, because a short result set looks like "nothing to do". Until
+> [#335](https://github.com/sboesebeck/morphium/issues/335) is fixed, either leave the flag off for
+> such fields or write them exclusively via `store()`.
+
+**With the flag off — the default — nothing changes on disk.** The write path is untouched at the
+default, so documents stay byte-identical to previous versions and older versions keep reading
+documents written by this one. Reading is tolerant either way: each of the four mappers accepts
+both its legacy shape and a native `Date`, so a database written before or after flipping the flag
+stays readable, and the flag can be switched at runtime on an already-constructed mapper (the
+mappers read it through a supplier rather than copying it at construction time).
+
+### Fixed
+
+#### CHITSPERC/CMISSPERC reported NaN instead of 0 before any cached read had happened
+`Statistics.java` computed `CHITS/(CHITS+CMISS)*100` unconditionally; before any cached read has
+happened both are 0, so the ratio was `0.0/0.0 = NaN`. Prometheus/OTel exporters silently drop NaN
+samples, so a fresh application's cache-hit-ratio metric appeared entirely missing instead of a
+real "no data yet" 0%. Found while verifying the quarkus-morphium observability module against a
+live otel-collector/Prometheus stack. Both percentages are now also computed by reading each
+`AtomicLong` once instead of three times, so they come from one consistent snapshot.
+#### PoppyDB: secondaries no longer leak ~800 bytes of heap per replicated event
+Every `InMemoryDriver.runCommand()` stores its reply in an internal by-id map, and the entry
+only ever leaves that map when the caller fetches it (`readSingleAnswer` et al.). The
+ReplicationManager apply path called `runCommand()` and threw the returned message id away for
+every non-bulk-insert operation — update/replace (the dominant type on a live bus), delete,
+drop, dropDatabase, the idempotent replay-insert, plus the initial-sync insert batches and the
+pre-sync database drops. The same pattern hid in `WatchCursorManager.createWatchCursor`,
+which discarded the stub reply of every started change stream (one leaked entry per created
+cursor — reconnect-looping messaging clients create them all day). On the primary the Netty
+handler fetches every request's answer, so only secondaries leaked per-event — one abandoned
+reply per replicated event, forever. Proven by measurement
+on a local 3-node replica set: 20,000 update events on the primary grew the secondaries'
+live-object count by exactly +1 `java.lang.Double` (the `"ok": 1.0`) per event after full GC,
+while the primary stayed flat. At production rates (~800 bytes/event, 12 events/s) that is
+roughly 0.8 GB/day until the node runs into the memory-watermark reject. All apply sites now
+fetch their result the way the bulk-insert path always did — which also surfaces write errors
+that used to be swallowed silently (logged, never thrown: an error reported inside a delivered
+result must not make the apply path fail harder than before).
+
+As defense in depth the driver itself no longer allows unbounded growth of the by-id result
+store: command ids are strictly monotonic and a legitimate caller fetches its answer
+synchronously in the same call stack, so an entry whose id lies more than a full window
+(10,000 ids, `-Dinmemory.maxPendingCommandResults`) in the past is abandoned with certainty —
+never "about to be read" — and gets evicted with a rate-limited WARN once the store exceeds
+the window. `resetData()` now clears the store too (it was the one cleanup path that missed
+it), and `REPLY_IN_MEM` in the driver stats finally counts these pending replies, which is
+what the new regression tests assert on.
+#### SingleMongoConnection: every heartbeat hello re-ran the full SASL handshake
+`getHelloResult()` appended a complete SCRAM authentication to every hello, including
+hellos sent over a connection that had authenticated long ago. MongoDB auth state is
+bound to the socket and survives for its lifetime, so on an auth-enabled cluster this
+produced one full SASL exchange per second per client on each pooled connection - all
+of it pure overhead, and invisible as connection churn because the socket never
+changed. Measured on a production replica set as ~7,200 `Successfully authenticated`
+entries per hour per node on unchanged connection ids. Authentication state is now
+tracked per connection and re-run only on a fresh socket (or after logout), which is
+exactly when it is actually needed. `SingleMongoConnectDriver` was never affected - its
+heartbeat uses a bare `HelloCommand` without the auth follow-up.
+
+#### PooledDriver: idle long-lived clients no longer rebuild their connection pool every 30 seconds
+A long-lived `PooledDriver` client with little or no application traffic tore down and rebuilt
+its pooled connections permanently: measured in production on a 3-node replica set with ~22
+long-lived Spring Boot clients, the nodes saw 1.48 (primary), 3.76 and 4.27 (secondaries) NEW
+TCP connections per second - steady, for hours - amounting to 347,000 / 762,000 / 937,000
+connection establishments over 61h while only 150-220 connections were ever open at a time.
+The cause: `lastUsed` on a pooled connection is only refreshed by real application borrows,
+not by the heartbeat hello that runs over it every second (deliberately so - otherwise the
+heartbeat would keep every connection "warm" forever and `maxConnectionIdleTime` could never
+shrink the pool after a burst). The idle sweep therefore declared every pooled connection of a
+quiet client idle after `maxConnectionIdleTime` (30s default) and closed it - and the refill
+loop immediately re-created it to satisfy `minConnectionsPerHost`. A full TCP handshake every
+30s per pooled connection, forever, for a connection that was carrying healthy heartbeat
+traffic the whole time. The hypothesis was verified experimentally against a local 3-node
+PoppyDB RS: with 9 pooled connections and idle time 10s the reconnect rate was exactly
+0.90/s (= pool size / idle time), a 10x longer idle time cut it to a tenth, and a 5x slower
+heartbeat left it unchanged. The fix keeps both properties intact: idle eviction now only
+shrinks the surplus above `minConnectionsPerHost` (bursts still drain back down), while the
+base stock is recycled solely via `maxConnectionLifeTime` (10min default). Secondaries were
+hit hardest because primaries stay warm through real borrows - matching the measured
+primary/secondary asymmetry.
+
+#### Container fields of scalar-mapped types (BigDecimal, Character, Atomic*, LocalDate, ...) now deserialize correctly (#334)
+`List`/array/`Map` fields whose element type has a custom mapper with a scalar `marshall()`
+result (`BigDecimal`, `Character`, `AtomicBoolean`/`AtomicInteger`/`AtomicLong`, `LocalDate`,
+`LocalTime`, `Timestamp`, ...) are stored element-wise as a `{"value": <scalar>}` wrapper map
+without `class_name`. The read path had no branch that recognised this shape: the raw wrapper
+`Map` survived into the loaded container, so the first typed access
+(`BigDecimal.compareTo(...)`) threw a `ClassCastException` — and typed arrays like
+`BigDecimal[]` failed the whole entity read outright with `array element type mismatch`.
+
+The fix is deliberately **read-side only — the on-disk write format is bit-for-bit
+unchanged**. A write-side fix (dropping the wrapper, adding `class_name`) was tried in
+PR #333 and measurably changed the stored document shape, which breaks rollbacks,
+mixed-version operation against a shared collection, and indexes on `field.value`; a
+read-side unwrap is purely additive: existing documents load correctly, new documents look
+exactly like before, and older Morphium versions keep reading them. A new format-stability
+test pins the written raw shape so any future write-side change fails loudly.
+
+Unwrapping is generic over the registered custom mappers, not a hardcoded type list, and
+deliberately narrow: a map is only treated as a wrapper if the declared element type has a
+registered custom mapper and the map carries exactly the key `value` (plus at most a
+`class_name`). Documents that legitimately contain a field named `value` — embedded objects,
+untyped `Map<String, Object>` content — are left untouched, and if the mapper was
+deregistered at runtime the read falls back to the previous behavior instead of throwing.
+
 
 ## [6.3.6] - 2026-08-21
 
